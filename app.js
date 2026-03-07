@@ -8,13 +8,13 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
 const compression = require('compression');
-
+const cookieParser = require(`cookie-parser`)
 
 
 const PORT = process.env.PORT || 5000;
 
 
-const PublicRoutes = require('./routes/user_routes');
+const UserRoutes = require('./routes/user_routes');
 const AdminRoutes = require('./routes/admin_routes');
 
 
@@ -27,8 +27,29 @@ const AdminRoutes = require('./routes/admin_routes');
 
 // Security middleware
 
+const corsOptions = {
+  origin: 'http://localhost:5173', // Your exact frontend URL - NO trailing slash
+  credentials: true, // This allows cookies to be sent/received
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['set-cookie'] // Allow frontend to see set-cookie headers
+};
+
+app.use(cors(corsOptions));
+app.use(cookieParser())
+// Handle preflight requests explicitly
+app.options('/{*any}', cors(corsOptions));
+
+// Add this middleware to verify CORS headers are set correctly
+// app.use((req, res, next) => {
+//   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+//   console.log('Origin:', req.headers.origin);
+//   console.log('Cookies:', req.cookies);
+//   next();
+// });
+
 app.use(helmet());
-app.use(cors());
 
 // Rate limiting
 const limiter = rateLimit({
@@ -52,7 +73,8 @@ app.use(hpp());
 app.use(compression());
 
 // Routes
-app.use('/api/public', PublicRoutes);
+// app.use('/api/public', PublicRoutes);
+app.use('/api/users', UserRoutes);
 app.use('/api/admin', AdminRoutes);
 
 // Add this test route to your app.js
@@ -88,18 +110,21 @@ app.get('/health', (req, res) => {
 });
 
 // 404 handler
-app.all('/:id', (req, res) => {
-    res.status(404).json({
-        status: 'error',
-        message: `Can't find ${req.originalUrl} on this server!`
-    });
-});
+// app.all('/:id', (req, res) => {
+//     res.status(404).json({
+//         status: 'error',
+//         message: `Can't find ${req.originalUrl} on this server!`
+//     });
+// });
 
 
 
 app.use((req, res, next) => {
-    console.log('Request came in:', req.method, req.url);
-    next();
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log('✅ Cookies received:', req.cookies); // This should now show cookies
+  console.log('✅ Signed Cookies:', req.signedCookies);
+  console.log('Origin:', req.headers.origin);
+  next();
 });
 
 

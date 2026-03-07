@@ -106,9 +106,11 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { email, password, twoFactorCode } = req.body;
+        console.log(email, password, twoFactorCode)
 
         // Find admin with password field included
         const admin = await Admin.findOne({ email: email.toLowerCase() }).select('+password +twoFactorSecret');
+        console.log(admin)
 
         if (!admin) {
             return res.status(401).json({ 
@@ -141,6 +143,7 @@ router.post('/login', async (req, res) => {
 
         // Verify password
         const isPasswordValid = await admin.comparePassword(password);
+        console.log("isPasswordValid is", isPasswordValid)
         
         if (!isPasswordValid) {
             await admin.incrementLoginAttempts();

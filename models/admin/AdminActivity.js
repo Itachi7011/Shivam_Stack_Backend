@@ -66,4 +66,4 @@ const AdminActivitySchema = new mongoose.Schema({
     ]
 });
 
-module.exports = mongoose.model('AdminActivity', AdminActivitySchema);
+module.exports = mongoose.model(`${process.env.APP_NAME}_AdminActivity`, AdminActivitySchema);

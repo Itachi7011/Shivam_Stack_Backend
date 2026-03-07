@@ -207,6 +207,8 @@ router.post('/resend-verification', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
+        console.log(email)
+        console.log(password)
 
         // Find user with password field included
         const user = await User.findOne({ email: email.toLowerCase() }).select('+password');

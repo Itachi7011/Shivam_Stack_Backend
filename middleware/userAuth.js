@@ -5,6 +5,7 @@ const User = require('../models/users/User');
 const userAuthenticate = async (req, res, next) => {
     try {
         const token = req.cookies.cookies1 || req.header('Authorization')?.replace('Bearer ', '');
+        // concole.log(token)
         
         if (!token) {
             return res.status(401).json({ 
