@@ -13,9 +13,14 @@ const adminAuthenticate = async (req, res, next) => {
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        // console.log(decoded)
         
+        // Check if token exists in database and is not revoked
         const admin = await Admin.findOne({ 
             _id: decoded.adminId,
+            'tokens.token': token,
+            'tokens.isRevoked': false,
+            'tokens.type': 'access',
             isActive: true,
             isBlocked: false
         }).select('-password -twoFactorSecret');
@@ -42,7 +47,6 @@ const adminAuthenticate = async (req, res, next) => {
         res.status(500).json({ message: 'Internal server error during authentication' });
     }
 };
-
 // Optional authentication - doesn't fail if no token
 const optionalAdminAuthenticate = async (req, res, next) => {
     try {

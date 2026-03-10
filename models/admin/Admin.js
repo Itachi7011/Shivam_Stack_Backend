@@ -74,6 +74,29 @@ const AdminSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    tokens: [{
+      token: {
+        type: String,
+        required: true
+      },
+      type: {
+        type: String,
+        enum: ['access', 'refresh'],
+        required: true
+      },
+      expiresAt: {
+        type: Date,
+        required: true
+      },
+      isRevoked: {
+        type: Boolean,
+        default: false
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
 
     twoFactorSecret: String,
 

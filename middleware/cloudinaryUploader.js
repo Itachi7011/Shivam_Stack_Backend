@@ -143,7 +143,162 @@ const cloudinaryMultiUpload = (fieldsArray, folder = "default_folder") => [
   }
 ];
 
+// ==================== NEW PRODUCT FILE UPLOAD FUNCTION ====================
+// This is specifically for product files (PDFs, etc.) - doesn't affect existing uploads
+
+const cloudinaryProductFileUpload = (fieldName, folder = "shivamstack/products") => [
+  upload.single(fieldName),
+  async (req, res, next) => {
+    try {
+      if (!req.file) return next();
+
+      // Check Cloudinary config
+      if (!cloudinary.config().cloud_name || !cloudinary.config().api_key || !cloudinary.config().api_secret) {
+        throw new Error("Cloudinary configuration is missing");
+      }
+
+      const file = req.file;
+      console.log('Uploading file:', {
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size
+      });
+
+      const dataUri = bufferToDataURI(file);
+
+      // Determine resource type
+      const resourceType = file.mimetype === 'application/pdf' ? "raw" : "auto";
+
+      // Generate public_id WITHOUT extension
+      const publicId = `product-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+      const uploadResult = await cloudinary.uploader.upload(dataUri, {
+        folder: folder,
+        resource_type: resourceType,
+        public_id: publicId,
+        type: 'upload',
+        access_mode: 'public',  // CRITICAL: This makes it publicly accessible
+        timeout: 60000,
+        // Add these options for raw files
+        ...(file.mimetype === 'application/pdf' && {
+          flags: 'attachment',   // Forces download instead of browser preview
+          use_filename: false,   // Don't use original filename
+          unique_filename: true  // Ensure unique filename
+        })
+      });
+
+      console.log('Upload successful:', {
+        url: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
+        format: uploadResult.format,
+        bytes: uploadResult.bytes,
+        access_mode: uploadResult.access_mode || 'public' // Should show 'public'
+      });
+
+      // Optional: Verify the file is accessible
+      try {
+        // Check the actual resource to confirm access mode
+        const resource = await cloudinary.api.resource(uploadResult.public_id, {
+          resource_type: resourceType
+        });
+        console.log('Resource access mode:', resource.access_mode);
+        
+        // If access_mode is not 'public', update it
+        if (resource.access_mode !== 'public') {
+          await cloudinary.uploader.update(uploadResult.public_id, {
+            resource_type: resourceType,
+            access_mode: 'public',
+            type: 'upload'
+          });
+          console.log('Updated access_mode to public');
+        }
+      } catch (verifyErr) {
+        console.error('Verification failed:', verifyErr);
+      }
+
+      req.cloudinaryProductFile = {
+        url: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
+        format: uploadResult.format || (file.mimetype === 'application/pdf' ? 'pdf' : ''),
+        originalName: file.originalname,
+        contentType: file.mimetype,
+        fileSize: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+        resourceType: resourceType
+      };
+
+      next();
+    } catch (err) {
+      console.error("Cloudinary Product File Upload Error:", err);
+      return res.status(err.http_code || 500).json({
+        success: false,
+        message: "File upload failed",
+        error: err.message,
+        errorCode: "PRODUCT_FILE_UPLOAD_ERROR"
+      });
+    }
+  }
+];
+
+// Multiple product files upload (for multiple PDFs or images)
+const cloudinaryProductFilesUpload = (fieldName, maxCount = 5, folder = "shivamstack/products") => [
+  upload.array(fieldName, maxCount),
+  async (req, res, next) => {
+    try {
+      if (!req.files || req.files.length === 0) return next();
+      
+      // Check if Cloudinary is configured
+      if (!cloudinary.config().cloud_name || !cloudinary.config().api_key || !cloudinary.config().api_secret) {
+        throw new Error("Cloudinary configuration is missing");
+      }
+
+      req.cloudinaryProductFiles = [];
+
+      for (const file of req.files) {
+        const dataUri = bufferToDataURI(file);
+        
+        let resourceType = "auto";
+        if (file.mimetype === 'application/pdf') {
+          resourceType = "raw";
+        }
+        
+        const uploadResult = await cloudinary.uploader.upload(dataUri, {
+          folder,
+          resource_type: resourceType,
+          public_id: `product-${uuidv4()}`,
+          timeout: 60000,
+          ...(file.mimetype === 'application/pdf' && {
+            format: 'pdf',
+            flags: 'attachment'
+          })
+        });
+
+        req.cloudinaryProductFiles.push({
+          url: uploadResult.secure_url,
+          publicId: uploadResult.public_id,
+          format: uploadResult.format,
+          originalName: file.originalname,
+          contentType: file.mimetype,
+          fileSize: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+          resourceType: resourceType
+        });
+      }
+
+      next();
+    } catch (err) {
+      console.error("Cloudinary Multiple Product Files Upload Error:", err);
+      res.status(500).json({ 
+        success: false,
+        message: "File upload failed",
+        errorCode: "PRODUCT_FILES_UPLOAD_ERROR"
+      });
+    }
+  }
+];
+
+
 module.exports = {
   cloudinarySingleUpload,
-  cloudinaryMultiUpload
+  cloudinaryMultiUpload,
+  cloudinaryProductFileUpload,  
+  cloudinaryProductFilesUpload 
 };

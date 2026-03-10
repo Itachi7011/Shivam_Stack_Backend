@@ -1,4 +1,4 @@
-// models/admin/AdminActivity.js
+// models/admin/AdminActivity.js - More flexible version
 const mongoose = require('mongoose');
 
 const AdminActivitySchema = new mongoose.Schema({
@@ -12,33 +12,22 @@ const AdminActivitySchema = new mongoose.Schema({
     action: {
         type: String,
         required: true,
+        // Remove enum validation or make it less strict
         enum: [
-            'login',
-            'logout',
-            'create',
-            'update',
-            'delete',
-            'view',
-            'change_password',
-            'enable_2fa',
-            'disable_2fa',
-            'update_permissions',
-            'block_admin',
-            'unblock_admin'
+            'login', 'logout', 'create', 'update', 'delete', 'view',
+            'change_password', 'enable_2fa', 'disable_2fa', 
+            'update_permissions', 'block_admin', 'unblock_admin',
+            'CREATE', 'UPDATE', 'DELETE', 'BULK_DELETE', 'BULK_UPDATE',
+            // Add any other values you might need
         ]
     },
 
     resourceType: {
         type: String,
         enum: [
-            'admin',
-            'user',
-            'product',
-            'order',
-            'blog',
-            'project',
-            'coupon',
-            'setting'
+            'admin', 'user', 'product', 'order', 'blog', 
+            'project', 'coupon', 'setting',
+            'ProductCategory', 'Product'
         ]
     },
 

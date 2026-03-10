@@ -9,13 +9,16 @@ const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
 const compression = require('compression');
 const cookieParser = require(`cookie-parser`)
-
+const fs = require('fs');
+const path = require('path');
 
 const PORT = process.env.PORT || 5000;
 
 
 const UserRoutes = require('./routes/user_routes');
 const AdminRoutes = require('./routes/admin_routes');
+const ProductRoutes = require('./routes/product_routes');
+const PublicProductRoutes = require('./routes/public_routes');
 
 
 
@@ -76,6 +79,8 @@ app.use(compression());
 // app.use('/api/public', PublicRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/admin', AdminRoutes);
+app.use('/api/admin/products', ProductRoutes);
+app.use("/api/public", PublicProductRoutes);
 
 // Add this test route to your app.js
 app.get('/api/test-cors-block', (req, res) => {
@@ -90,12 +95,6 @@ app.get('/api/test-cors-block', (req, res) => {
 app.get('/api/test', (req, res) => {
     res.send("Successfully reaches");
 })
-
-
-
-
-
-
 
 
 
@@ -143,7 +142,7 @@ mongoose.connect(process.env.MONGODB_URI, {
     process.exit(1);
 });
 
-// Start server
+
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
