@@ -26,8 +26,8 @@ const AdminActivitySchema = new mongoose.Schema({
         type: String,
         enum: [
             'admin', 'user', 'product', 'order', 'blog', 
-            'project', 'coupon', 'setting',
-            'ProductCategory', 'Product'
+            'project', 'coupon', 'setting', 'Coupon','Project',
+            'ProductCategory', 'Product', 'Blog' ,'BlogCategory', 'ProjectCategory'
         ]
     },
 

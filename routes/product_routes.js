@@ -242,6 +242,8 @@ router.delete(
   async (req, res) => {
     try {
       const category = await ProductCategoryDB.findById(req.params.id);
+            console.log("category" , category)
+
       if (!category) {
         return res.status(404).json({ message: "Category not found" });
       }

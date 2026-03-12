@@ -18,6 +18,9 @@ const PORT = process.env.PORT || 5000;
 const UserRoutes = require('./routes/user_routes');
 const AdminRoutes = require('./routes/admin_routes');
 const ProductRoutes = require('./routes/product_routes');
+const BlogsRoutes = require('./routes/blog_routes');
+const CouponsRoutes = require('./routes/coupon_routes');
+const ProjectsRoutes = require('./routes/project_routes');
 const PublicProductRoutes = require('./routes/public_routes');
 
 
@@ -37,8 +40,8 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['set-cookie'] // Allow frontend to see set-cookie headers
-};
-
+}; 
+ 
 app.use(cors(corsOptions));
 app.use(cookieParser())
 // Handle preflight requests explicitly
@@ -80,6 +83,9 @@ app.use(compression());
 app.use('/api/users', UserRoutes);
 app.use('/api/admin', AdminRoutes);
 app.use('/api/admin/products', ProductRoutes);
+app.use('/api/admin/blogs', BlogsRoutes);
+app.use('/api/admin/coupons', CouponsRoutes);
+app.use('/api/admin/projects', ProjectsRoutes);
 app.use("/api/public", PublicProductRoutes);
 
 // Add this test route to your app.js
