@@ -4,6 +4,9 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 
+const CommentSchema = require("./Comment")
+
+
 const UserSchema = new mongoose.Schema(
   {
     // Basic Identity
@@ -101,6 +104,28 @@ const UserSchema = new mongoose.Schema(
       google: { id: String },
       github: { id: String },
     },
+
+    likedBlogs: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Blog",
+      },
+    ],
+
+    likedProjects: [
+  {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: `${process.env.APP_NAME}_Project`,
+  },
+],
+
+projectComments: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: `${process.env.APP_NAME}_Project`,
+      }
+    ],
+      comments: [CommentSchema],  // Add this if missing
 
     // Token management
     tokens: [

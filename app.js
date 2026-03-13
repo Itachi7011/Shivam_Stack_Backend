@@ -124,13 +124,13 @@ app.get('/health', (req, res) => {
 
 
 
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  console.log('✅ Cookies received:', req.cookies); // This should now show cookies
-  console.log('✅ Signed Cookies:', req.signedCookies);
-  console.log('Origin:', req.headers.origin);
-  next();
-});
+// app.use((req, res, next) => {
+//   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+//   console.log('✅ Cookies received:', req.cookies); // This should now show cookies
+//   console.log('✅ Signed Cookies:', req.signedCookies);
+//   console.log('Origin:', req.headers.origin);
+//   next();
+// });
 
 
 app.get('/favicon.ico', (req, res) => {
@@ -147,7 +147,6 @@ mongoose.connect(process.env.MONGODB_URI, {
     console.error('MongoDB connection error:', err);
     process.exit(1);
 });
-
 
 
 app.listen(PORT, () => {

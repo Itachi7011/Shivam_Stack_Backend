@@ -1,5 +1,26 @@
 const mongoose = require("mongoose");
 
+// Comment Schema for projects
+const ProjectCommentSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: `${process.env.APP_NAME}_User`,
+    required: true
+  },
+  comment: {
+    type: String,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
 const ProjectSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -23,6 +44,7 @@ const ProjectSchema = new mongoose.Schema(
     },
 
     // Media
+     mainImage: { type: String }, 
     images: [String],
 
     // Project category
@@ -47,6 +69,13 @@ const ProjectSchema = new mongoose.Schema(
     // Stats
     views: { type: Number, default: 0 },
     shares: { type: Number, default: 0 },
+
+    // Likes and Comments - ADD THESE FIELDS
+    projectLikes: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: `${process.env.APP_NAME}_User`
+    }],
+     projectComments: [ProjectCommentSchema], 
 
     // SEO
     metaTitle: { type: String },

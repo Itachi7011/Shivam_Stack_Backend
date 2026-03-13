@@ -330,9 +330,90 @@ const cloudinaryProductFilesUpload = (
   },
 ];
 
+// In cloudinaryUploader.js, update the cloudinaryProductFilesUploadFields function:
+const cloudinaryProductFilesUploadFields = (
+  fields,
+  folder = "shivamstack/projects",
+) => {
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter(req, file, cb) {
+      if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+        return cb(new Error("Only image files are allowed"));
+      }
+      cb(null, true);
+    },
+  }).fields(fields);
+
+  return [
+    upload,
+    async (req, res, next) => {
+      try {
+        // Initialize objects to store uploaded files
+        req.uploadedFiles = {
+          mainImage: null,
+          images: [],
+        };
+
+        if (!req.files || Object.keys(req.files).length === 0) {
+          return next();
+        }
+
+        // Upload main image if present
+        if (req.files.mainImage && req.files.mainImage.length > 0) {
+          const file = req.files.mainImage[0];
+          const dataUri = bufferToDataURI(file);
+
+          const uploadResult = await cloudinary.uploader.upload(dataUri, {
+            folder,
+            resource_type: "auto",
+            public_id: `main-${uuidv4()}`,
+            timeout: 60000,
+          });
+
+          req.uploadedFiles.mainImage = {
+            url: uploadResult.secure_url,
+            publicId: uploadResult.public_id,
+          };
+        }
+
+        // Upload additional images
+        if (req.files.images && req.files.images.length > 0) {
+          for (const file of req.files.images) {
+            const dataUri = bufferToDataURI(file);
+
+            const uploadResult = await cloudinary.uploader.upload(dataUri, {
+              folder,
+              resource_type: "auto",
+              public_id: `image-${uuidv4()}`,
+              timeout: 60000,
+            });
+
+            req.uploadedFiles.images.push({
+              url: uploadResult.secure_url,
+              publicId: uploadResult.public_id,
+            });
+          }
+        }
+
+        next();
+      } catch (err) {
+        console.error("Cloudinary Multiple Fields Upload Error:", err);
+        res.status(500).json({
+          success: false,
+          message: "File upload failed",
+          errorCode: "FIELDS_UPLOAD_ERROR",
+        });
+      }
+    },
+  ];
+};
+
 module.exports = {
   cloudinarySingleUpload,
   cloudinaryMultiUpload,
   cloudinaryProductFileUpload,
   cloudinaryProductFilesUpload,
+  cloudinaryProductFilesUploadFields,
 };
