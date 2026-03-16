@@ -7,10 +7,28 @@ const speakeasy = require("speakeasy");
 
 const Admin = require("../models/admin/Admin");
 const AdminActivity = require("../models/admin/AdminActivity");
+const SiteSettingsDB = require("../models/admin/SiteSettings");
+const NewsletterSubscriberDB = require("../models/public/NewsletterSubscriber");
+const BlogDB = require("../models/public/Blog");
+const BlogCategoryDB = require("../models/public/BlogCategory");
+const ReviewDB = require("../models/public/Review");
+const ProductDB = require("../models/public/Product");
+const ProductCategoryDB = require("../models/public/ProductCategory");
+const ProjectDB = require("../models/public/Project");
+const ProjectCategoryDB = require("../models/public/ProjectCategory");
+const UserDB = require("../models/users/User");
+const UserActivityDB = require("../models/users/UserActivity");
+const DownloadDB = require("../models/users/Download");
+const CouponDB = require("../models/shared/Coupon");
+const InvoiceDB = require("../models/shared/Invoice");
+const OrderDB = require("../models/shared/Order");
+const PaymentDB = require("../models/shared/Payment");
 const { adminAuthenticate, hasPermission } = require("../middleware/adminAuth");
 const { sendEmail } = require("../services/emailService");
 const tokenService = require("../services/tokenService");
 const adminActivityService = require("../services/adminActivityService");
+
+
 
 /* ==============================
    PUBLIC ROUTES
@@ -845,26 +863,892 @@ router.get(
   },
 );
 
-// Get dashboard stats (admin only)
+// Add these new routes to your existing adminRoutes.js
+
+// ==================== DASHBOARD STATS ====================
+
+// Get comprehensive dashboard statistics
 router.get("/dashboard/stats", adminAuthenticate, async (req, res) => {
   try {
-    // These would come from your other models
-    const stats = {
-      totalUsers: 0, // await User.countDocuments()
-      totalOrders: 0, // await Order.countDocuments()
-      totalProducts: 0, // await Product.countDocuments()
-      totalProjects: 0, // await Project.countDocuments()
-      recentActivities: await AdminActivity.find()
-        .populate("admin", "name")
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
+    
+    const [
+      totalProducts,
+      publishedProducts,
+      totalBlogs,
+      publishedBlogs,
+      totalProjects,
+      completedProjects,
+      totalCoupons,
+      activeCoupons,
+      totalBlogCats,
+      totalProdCats,
+      totalProjectCats,
+      totalNewsletterSubs,
+      recentNewsletterSubs,
+      totalReviews,
+      approvedReviews,
+      pendingReviews,
+      totalUsers,
+      activeUsers,
+      totalAdmins,
+      activeAdmins,
+      totalDownloads,
+      recentDownloads,
+      totalOrders,
+      completedOrders,
+      totalPayments,
+      completedPayments,
+      totalInvoices,
+      paidInvoices,
+      recentActivities
+    ] = await Promise.all([
+      // Products
+      ProductDB.countDocuments(),
+      ProductDB.countDocuments({ isPublished: true }),
+      
+      // Blogs
+      BlogDB.countDocuments(),
+      BlogDB.countDocuments({ isPublished: true }),
+      
+      // Projects
+      ProjectDB.countDocuments(),
+      ProjectDB.countDocuments({ status: "completed" }),
+      
+      // Coupons
+      CouponDB.countDocuments(),
+      CouponDB.countDocuments({ 
+        isActive: true,
+        $or: [
+          { validTill: { $exists: false } },
+          { validTill: null },
+          { validTill: { $gte: new Date() } }
+        ]
+      }),
+      
+      // Categories
+      BlogCategoryDB.countDocuments(),
+      ProductCategoryDB.countDocuments(),
+      ProjectCategoryDB.countDocuments(),
+      
+      // Newsletter Subscribers
+      NewsletterSubscriberDB.countDocuments(),
+      NewsletterSubscriberDB.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+      
+      // Reviews
+      ReviewDB.countDocuments(),
+      ReviewDB.countDocuments({ isApproved: true }),
+      ReviewDB.countDocuments({ isApproved: false }),
+      
+      // Users
+      UserDB.countDocuments(),
+      UserDB.countDocuments({ 
+        lastLogin: { $gte: thirtyDaysAgo },
+        isActive: true 
+      }),
+      
+      // Admins
+      Admin.countDocuments(),
+      Admin.countDocuments({ lastLogin: { $gte: thirtyDaysAgo }, isActive: true }),
+      
+      // Downloads
+      DownloadDB.countDocuments(),
+      DownloadDB.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+      
+      // Orders
+      OrderDB.countDocuments(),
+      OrderDB.countDocuments({ status: "completed" }),
+      
+      // Payments
+      PaymentDB.countDocuments(),
+      PaymentDB.countDocuments({ status: "completed" }),
+      
+      // Invoices
+      InvoiceDB.countDocuments(),
+      InvoiceDB.countDocuments({ status: "paid" }),
+      
+      // Recent Activities
+      AdminActivity.find()
+        .populate("admin", "name email")
         .sort({ createdAt: -1 })
-        .limit(10),
-    };
+        .limit(10)
+    ]);
 
-    res.json(stats);
+    // Get revenue data
+    const revenueData = await OrderDB.aggregate([
+      {
+        $match: {
+          status: { $in: ['completed', 'processing'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$totalAmount" }
+        }
+      }
+    ]);
+
+    const totalRevenue = revenueData[0]?.total || 0;
+
+    res.json({
+      data: {
+        // Products
+        totalProducts,
+        publishedProducts,
+        
+        // Blogs
+        totalBlogs,
+        publishedBlogs,
+        
+        // Projects
+        totalProjects,
+        completedProjects,
+        
+        // Coupons
+        totalCoupons,
+        activeCoupons,
+        
+        // Categories
+        totalBlogCats,
+        totalProdCats,
+        totalProjectCats,
+        
+        // Newsletter
+        totalNewsletterSubs,
+        recentNewsletterSubs: recentNewsletterSubs,
+        
+        // Reviews
+        totalReviews,
+        approvedReviews,
+        pendingReviews,
+        
+        // Users & Admins
+        totalUsers,
+        activeUsers,
+        totalAdmins,
+        activeAdmins,
+        
+        // Downloads
+        totalDownloads,
+        recentDownloads: recentDownloads,
+        
+        // Orders
+        totalOrders,
+        completedOrders,
+        
+        // Payments
+        totalPayments,
+        completedPayments,
+        totalRevenue,
+        
+        // Invoices
+        totalInvoices,
+        paidInvoices,
+        
+        // Activities
+        recentActivities
+      }
+    });
   } catch (err) {
     console.error("Get dashboard stats error:", err);
-    res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    res.status(500).json({ message: "Failed to fetch dashboard statistics" });
   }
 });
+
+// ==================== NEWSLETTER SUBSCRIBERS ====================
+
+// Get all newsletter subscribers
+router.get("/newsletter-subscribers", adminAuthenticate, hasPermission(["view_analytics"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = "", status } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { email: { $regex: search, $options: "i" } },
+        { name: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    if (status === "active") query.isActive = true;
+    if (status === "unsubscribed") query.isActive = false;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const subscribers = await NewsletterSubscriberDB.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select('email name isActive subscribedAt unsubscribedAt');
+
+    const total = await NewsletterSubscriberDB.countDocuments(query);
+
+    res.json({
+      data: subscribers,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (err) {
+    console.error("Get newsletter subscribers error:", err);
+    res.status(500).json({ message: "Failed to fetch newsletter subscribers" });
+  }
+});
+
+// Export newsletter subscribers as CSV
+router.get("/newsletter-subscribers/export", adminAuthenticate, hasPermission(["view_analytics"]), async (req, res) => {
+  try {
+    const subscribers = await NewsletterSubscriberDB.find({ isActive: true })
+      .select('email name subscribedAt')
+      .sort({ subscribedAt: -1 });
+
+    const csv = [
+      ['Email', 'Name', 'Subscribed Date'].join(','),
+      ...subscribers.map(sub => [
+        sub.email,
+        sub.name || '',
+        new Date(sub.subscribedAt).toISOString().split('T')[0]
+      ].join(','))
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=newsletter-subscribers.csv');
+    res.send(csv);
+  } catch (err) {
+    console.error("Export newsletter subscribers error:", err);
+    res.status(500).json({ message: "Failed to export newsletter subscribers" });
+  }
+});
+
+// ==================== REVIEWS ====================
+
+// Get all reviews
+router.get("/reviews", adminAuthenticate, hasPermission(["manage_products"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = "", status, productId } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { comment: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    if (status === "approved") query.isApproved = true;
+    if (status === "pending") query.isApproved = false;
+    if (productId) query.product = productId;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const reviews = await ReviewDB.find(query)
+      .populate('user', 'name email')
+      .populate('product', 'name slug')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await ReviewDB.countDocuments(query);
+
+    res.json({
+      data: reviews,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (err) {
+    console.error("Get reviews error:", err);
+    res.status(500).json({ message: "Failed to fetch reviews" });
+  }
+});
+
+// Approve review
+router.patch("/reviews/:id/approve", adminAuthenticate, hasPermission(["manage_products"]), async (req, res) => {
+  try {
+    const review = await ReviewDB.findById(req.params.id);
+    if (!review) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    review.isApproved = true;
+    await review.save();
+
+    await adminActivityService.trackActivity(req.admin._id, "UPDATE", {
+      resourceType: "Review",
+      resourceId: review._id,
+      metadata: { action: "approve_review" },
+      ipAddress: req.ip,
+      userAgent: req.get("User-Agent"),
+    });
+
+    res.json({ message: "Review approved successfully", data: review });
+  } catch (err) {
+    console.error("Approve review error:", err);
+    res.status(500).json({ message: "Failed to approve review" });
+  }
+});
+
+// Delete review
+router.delete("/reviews/:id", adminAuthenticate, hasPermission(["manage_products"]), async (req, res) => {
+  try {
+    const review = await ReviewDB.findById(req.params.id);
+    if (!review) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    await review.deleteOne();
+
+    await adminActivityService.trackActivity(req.admin._id, "DELETE", {
+      resourceType: "Review",
+      resourceId: review._id,
+      metadata: { action: "delete_review" },
+      ipAddress: req.ip,
+      userAgent: req.get("User-Agent"),
+    });
+
+    res.json({ message: "Review deleted successfully" });
+  } catch (err) {
+    console.error("Delete review error:", err);
+    res.status(500).json({ message: "Failed to delete review" });
+  }
+});
+
+// ==================== DOWNLOADS ====================
+
+// Get all downloads with details
+router.get("/downloads", adminAuthenticate, hasPermission(["view_analytics"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = "", userId, fileName } = req.query;
+    const query = {};
+
+    if (search) {
+      query.fileName = { $regex: search, $options: "i" };
+    }
+    if (userId) query.user = userId;
+    if (fileName) query.fileName = { $regex: fileName, $options: "i" };
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const downloads = await DownloadDB.find(query)
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await DownloadDB.countDocuments(query);
+
+    // Get total downloads count
+    const totalDownloadsCount = await DownloadDB.countDocuments();
+
+    res.json({
+      data: {
+        downloads,
+        totalCount: totalDownloadsCount,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Get downloads error:", err);
+    res.status(500).json({ message: "Failed to fetch downloads" });
+  }
+});
+
+// Get download statistics
+router.get("/downloads/stats", adminAuthenticate, hasPermission(["view_analytics"]), async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
+    const [
+      totalDownloads,
+      downloadsByFile,
+      recentDownloads,
+      topDownloaders
+    ] = await Promise.all([
+      DownloadDB.countDocuments(),
+      
+      // Downloads by file type
+      DownloadDB.aggregate([
+        {
+          $group: {
+            _id: "$fileType",
+            count: { $sum: 1 },
+            totalSize: { $sum: "$fileSize" }
+          }
+        },
+        { $sort: { count: -1 } }
+      ]),
+      
+      // Recent downloads (last 30 days)
+      DownloadDB.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: thirtyDaysAgo }
+          }
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
+      
+      // Top downloaders
+      DownloadDB.aggregate([
+        {
+          $group: {
+            _id: "$user",
+            downloadCount: { $sum: 1 }
+          }
+        },
+        { $sort: { downloadCount: -1 } },
+        { $limit: 10 },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "userInfo"
+          }
+        }
+      ])
+    ]);
+
+    res.json({
+      data: {
+        totalDownloads,
+        downloadsByFile,
+        recentDownloads,
+        topDownloaders
+      }
+    });
+  } catch (err) {
+    console.error("Get download stats error:", err);
+    res.status(500).json({ message: "Failed to fetch download statistics" });
+  }
+});
+
+
+// ==================== ADMINS ====================
+
+// Get all admins
+router.get("/admins-users", adminAuthenticate, hasPermission(["manage_settings"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = "", role } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    if (role) query.role = role;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const admins = await Admin.find(query)
+      .select('-password -tokens -twoFactorSecret')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Admin.countDocuments(query);
+
+    // Get online admins (active in last 15 minutes)
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const onlineAdmins = await Admin.countDocuments({
+      lastLogin: { $gte: fifteenMinsAgo },
+      isActive: true
+    });
+
+    res.json({
+      data: {
+        admins,
+        onlineAdmins,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Get admins error:", err);
+    res.status(500).json({ message: "Failed to fetch admins" });
+  }
+});
+
+// ==================== PAYMENTS ====================
+
+// Get all payments
+router.get("/payments", adminAuthenticate, hasPermission(["manage_orders"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, status, fromDate, toDate } = req.query;
+    const query = {};
+
+    if (status) query.status = status;
+    if (fromDate || toDate) {
+      query.createdAt = {};
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
+      if (toDate) query.createdAt.$lte = new Date(toDate);
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const payments = await PaymentDB.find(query)
+      .populate({
+        path: 'order',
+        populate: {
+          path: 'user',
+          select: 'name email'
+        }
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await PaymentDB.countDocuments(query);
+
+    // Get payment statistics
+    const stats = await PaymentDB.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          total: { $sum: "$amount" }
+        }
+      }
+    ]);
+
+    res.json({
+      data: {
+        payments,
+        stats,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Get payments error:", err);
+    res.status(500).json({ message: "Failed to fetch payments" });
+  }
+});
+
+// ==================== INVOICES ====================
+
+// Get all invoices
+router.get("/invoices", adminAuthenticate, hasPermission(["manage_orders"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, status, fromDate, toDate } = req.query;
+    const query = {};
+
+    if (status) query.status = status;
+    if (fromDate || toDate) {
+      query.createdAt = {};
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
+      if (toDate) query.createdAt.$lte = new Date(toDate);
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const invoices = await InvoiceDB.find(query)
+      .populate({
+        path: 'order',
+        populate: {
+          path: 'user',
+          select: 'name email'
+        }
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await InvoiceDB.countDocuments(query);
+
+    // Get invoice statistics
+    const stats = await InvoiceDB.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          total: { $sum: "$amount" }
+        }
+      }
+    ]);
+
+    res.json({
+      data: {
+        invoices,
+        stats,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Get invoices error:", err);
+    res.status(500).json({ message: "Failed to fetch invoices" });
+  }
+});
+
+// Generate invoice PDF (you'll need a PDF library)
+router.get("/invoices/:id/pdf", adminAuthenticate, hasPermission(["manage_orders"]), async (req, res) => {
+  try {
+    const invoice = await InvoiceDB.findById(req.params.id)
+      .populate({
+        path: 'order',
+        populate: [
+          { path: 'user', select: 'name email' },
+          { path: 'products.product' }
+        ]
+      });
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    // Here you would generate PDF using a library like pdfkit
+    // For now, return invoice data
+    res.json({ data: invoice });
+  } catch (err) {
+    console.error("Generate invoice PDF error:", err);
+    res.status(500).json({ message: "Failed to generate invoice PDF" });
+  }
+});
+
+// ==================== PROJECT CATEGORIES ====================
+
+// Get all project categories
+router.get("/project-categories", adminAuthenticate, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = "", isActive } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { slug: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    if (isActive !== undefined && isActive !== "") {
+      query.isActive = isActive === "true";
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const categories = await ProjectCategoryDB.find(query)
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await ProjectCategoryDB.countDocuments(query);
+
+    // Get project counts per category
+    const categoriesWithCounts = await Promise.all(
+      categories.map(async (category) => {
+        const projectCount = await ProjectDB.countDocuments({ 
+          category: category._id,
+          isPublished: true 
+        });
+        return {
+          ...category.toObject(),
+          projectCount
+        };
+      })
+    );
+
+    res.json({
+      data: categoriesWithCounts,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (err) {
+    console.error("Get project categories error:", err);
+    res.status(500).json({ message: "Failed to fetch project categories" });
+  }
+});
+
+
+// Get main settings (basic admin settings)
+router.get("/main-settings", adminAuthenticate, async (req, res) => {
+  try {
+    // You can fetch from SiteSettings model or return defaults
+    res.json({
+      data: {
+        appName: "ShivamStack",
+        companyName: "ShivamStack Technologies",
+        security: {
+          isMaintenanceMode: false,
+          enable2FA: true
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Get main settings error:", err);
+    res.status(500).json({ message: "Failed to fetch settings" });
+  }
+});
+
+// ==================== USERS ====================
+
+// Get all users with details
+router.get("/users", adminAuthenticate, hasPermission(["manage_users"]), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = "", status, role } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    if (status === "active") query.isActive = true;
+    if (status === "blocked") query.isBlocked = true;
+    if (status === "inactive") query.isActive = false;
+    if (role) query.role = role;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const users = await UserDB.find(query)
+      .select('-password -tokens')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await UserDB.countDocuments(query);
+
+    // Get online users (active in last 15 minutes)
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const onlineUsers = await UserDB.countDocuments({
+      lastLogin: { $gte: fifteenMinsAgo },
+      isActive: true
+    });
+
+    res.json({
+      data: {
+        users,
+        onlineUsers,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Get users error:", err);
+    res.status(500).json({ message: "Failed to fetch users" });
+  }
+});
+
+// Get single user details
+router.get("/users/:id", adminAuthenticate, hasPermission(["manage_users"]), async (req, res) => {
+  try {
+    const user = await UserDB.findById(req.params.id)
+      .select('-password -tokens')
+      .populate('likedBlogs', 'title slug')
+      .populate('likedProjects', 'title slug');
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Get user's downloads
+    const downloads = await DownloadDB.find({ user: user._id })
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    // Get user's orders
+    const orders = await OrderDB.find({ user: user._id })
+      .populate('products.product', 'name slug price')
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    // Get user's reviews
+    const reviews = await ReviewDB.find({ user: user._id })
+      .populate('product', 'name slug')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      data: {
+        user,
+        downloads,
+        orders,
+        reviews,
+        downloadCount: downloads.length,
+        orderCount: orders.length,
+        reviewCount: reviews.length
+      }
+    });
+  } catch (err) {
+    console.error("Get user details error:", err);
+    res.status(500).json({ message: "Failed to fetch user details" });
+  }
+});
+
+// Block/Unblock user
+router.patch("/users/:id/toggle-block", adminAuthenticate, hasPermission(["manage_users"]), async (req, res) => {
+  try {
+    const { block, reason } = req.body;
+    const user = await UserDB.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.isBlocked = block;
+    if (block && reason) user.blockedReason = reason;
+    await user.save();
+
+    await adminActivityService.trackActivity(req.admin._id, block ? "block_user" : "unblock_user", {
+      resourceType: "User",
+      resourceId: user._id,
+      metadata: { userName: user.name, reason },
+      ipAddress: req.ip,
+      userAgent: req.get("User-Agent"),
+    });
+
+    res.json({
+      message: block ? "User blocked successfully" : "User unblocked successfully",
+      data: user
+    });
+  } catch (err) {
+    console.error("Toggle user block error:", err);
+    res.status(500).json({ message: "Failed to update user status" });
+  }
+});
+
 
 module.exports = router;

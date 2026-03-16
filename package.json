@@ -34,6 +34,7 @@
     "os": "^0.1.2",
     "passport": "^0.7.0",
     "pdfkit": "^0.17.2",
+    "socket.io": "^4.8.3",
     "speakeasy": "^2.0.0",
     "systeminformation": "^5.31.1",
     "tls": "^0.0.1",

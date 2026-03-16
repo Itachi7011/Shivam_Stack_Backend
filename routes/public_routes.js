@@ -1,3 +1,4 @@
+// routes/users/publicRoutes.js
 const express = require("express");
 const router = express.Router();
 const mongoose = require("mongoose"); // Add this line at the top
