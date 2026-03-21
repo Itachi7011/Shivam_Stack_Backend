@@ -92,307 +92,128 @@ router.get("/categories/slug/:slug", async (req, res) => {
   }
 });
 
-// Create project
+// Create project category
 router.post(
-  "/",
+  "/categories",
   adminAuthenticate,
   hasPermission(["manage_projects"]),
-  cloudinaryProductFilesUploadFields(
-    [
-      { name: "images", maxCount: 10 },
-      { name: "mainImage", maxCount: 1 },
-    ],
-    "shivamstack/projects"
-  ),
   async (req, res) => {
     try {
-    //   console.log("Project creation started");
-    //   console.log("Body:", req.body);
-    //   console.log("Uploaded files:", req.uploadedFiles);
-
-      let projectData = { ...req.body };
-
-      // Parse JSON strings if needed
-      const parseFields = ["tags", "technologies", "metaKeywords"];
-      parseFields.forEach((field) => {
-        if (projectData[field] && typeof projectData[field] === "string") {
-          try {
-            projectData[field] = JSON.parse(projectData[field]);
-          } catch (e) {
-            projectData[field] = projectData[field]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-        }
+      const { name, slug, description, isActive, metaTitle, metaDescription, metaKeywords } = req.body;
+      
+      // Check if category with same name or slug exists
+      const existingCategory = await ProjectCategoryDB.findOne({
+        $or: [{ name }, { slug }]
       });
-
-      // Handle main image - SEPARATE FIELD
-      if (req.uploadedFiles.mainImage) {
-        // New uploaded main image
-        projectData.mainImage = req.uploadedFiles.mainImage.url;
-      } else if (projectData.existingMainImage && projectData.existingMainImage !== '') {
-        // Existing main image URL
-        projectData.mainImage = projectData.existingMainImage;
-      } else {
-        // No main image
-        projectData.mainImage = '';
-      }
-
-      // Handle additional images - SEPARATE FIELD
-      let additionalImages = [];
-
-      // Add existing additional images if provided
-      if (projectData.existingImages) {
-        try {
-          const existingImages = JSON.parse(projectData.existingImages);
-          if (Array.isArray(existingImages)) {
-            additionalImages = [...additionalImages, ...existingImages];
-          }
-        } catch (e) {
-          console.error("Error parsing existing images:", e);
-        }
-      }
-
-      // Add newly uploaded additional images
-      if (req.uploadedFiles.images && req.uploadedFiles.images.length > 0) {
-        const newImageUrls = req.uploadedFiles.images.map(img => img.url);
-        additionalImages = [...additionalImages, ...newImageUrls];
-      }
-
-      projectData.images = additionalImages;
-
-      // Handle empty category
-      if (!projectData.category || projectData.category === "") {
-        delete projectData.category;
-      }
-
-      // Check if slug exists
-      const existing = await ProjectDB.findOne({ slug: projectData.slug });
-      if (existing) {
-        return res.status(400).json({ message: "Project slug already exists" });
-      }
-
-      // Validate category only if provided
-      if (projectData.category) {
-        const category = await ProjectCategoryDB.findById(projectData.category);
-        if (!category) {
-          return res.status(400).json({ message: "Invalid category" });
-        }
-      }
-
-      // Convert string booleans to actual booleans
-      const booleanFields = ["isFeatured", "isPublished", "requiresLogin"];
-      booleanFields.forEach((field) => {
-        if (projectData[field] !== undefined) {
-          projectData[field] = projectData[field] === "true";
-        }
-      });
-
-      // Parse numeric fields
-      if (projectData.priority !== undefined) {
-        projectData.priority = parseInt(projectData.priority) || 0;
-      }
-
-      // Handle dates
-      if (projectData.startDate) {
-        projectData.startDate = new Date(projectData.startDate);
-      }
-      if (projectData.endDate) {
-        projectData.endDate = new Date(projectData.endDate);
-      }
-
-      const project = new ProjectDB(projectData);
-      await project.save();
-
-      await adminActivityService.trackActivity(req.admin._id, "CREATE", {
-        resourceType: "Project",
-        resourceId: project._id,
-        metadata: { title: project.title, slug: project.slug },
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-      });
-
-      res.status(201).json({
-        message: "Project created successfully",
-        data: project,
-      });
-    } catch (err) {
-      console.error("Create project error:", err);
-      res.status(500).json({ message: "Failed to create project" });
-    }
-  }
-);
-
-// Update project
-router.put(
-  "/:id",
-  adminAuthenticate,
-  hasPermission(["manage_projects"]),
-  cloudinaryProductFilesUploadFields(
-    [
-      { name: "images", maxCount: 10 },
-      { name: "mainImage", maxCount: 1 },
-    ],
-    "shivamstack/projects"
-  ),
-  async (req, res) => {
-    try {
-      let projectData = req.body;
-
-      // Parse JSON strings if they came from FormData
-      const parseFields = ["tags", "technologies", "metaKeywords"];
-      parseFields.forEach((field) => {
-        if (projectData[field] && typeof projectData[field] === "string") {
-          try {
-            projectData[field] = JSON.parse(projectData[field]);
-          } catch (e) {
-            projectData[field] = projectData[field]
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean);
-          }
-        }
-      });
-
-      const project = await ProjectDB.findById(req.params.id);
-      if (!project) {
-        return res.status(404).json({ message: "Project not found" });
-      }
-
-      // Handle main image - SEPARATE FIELD
-      if (req.uploadedFiles.mainImage) {
-        // New uploaded main image
-        projectData.mainImage = req.uploadedFiles.mainImage.url;
-      } else if (projectData.existingMainImage !== undefined) {
-        // Existing main image URL or empty string
-        projectData.mainImage = projectData.existingMainImage;
-      }
-
-      // Handle additional images - SEPARATE FIELD
-      let additionalImages = [];
-
-      // Add existing additional images if provided
-      if (projectData.existingImages) {
-        try {
-          const existingImages = JSON.parse(projectData.existingImages);
-          if (Array.isArray(existingImages)) {
-            additionalImages = [...additionalImages, ...existingImages];
-          }
-        } catch (e) {
-          console.error("Error parsing existing images:", e);
-        }
-      }
-
-      // Add newly uploaded additional images
-      if (req.uploadedFiles.images && req.uploadedFiles.images.length > 0) {
-        const newImageUrls = req.uploadedFiles.images.map(img => img.url);
-        additionalImages = [...additionalImages, ...newImageUrls];
-      }
-
-      projectData.images = additionalImages;
-
-      // Store old values for activity log
-      const oldValues = {
-        title: project.title,
-        status: project.status,
-        isPublished: project.isPublished,
-        isFeatured: project.isFeatured,
-      };
-
-      // Check if slug exists for other projects
-      if (projectData.slug && projectData.slug !== project.slug) {
-        const existing = await ProjectDB.findOne({
-          _id: { $ne: project._id },
-          slug: projectData.slug,
+      
+      if (existingCategory) {
+        return res.status(400).json({ 
+          message: "Category with this name or slug already exists" 
         });
-
-        if (existing) {
-          return res.status(400).json({ message: "Project slug already exists" });
-        }
       }
-
-      // Validate category if provided
-      if (projectData.category && projectData.category !== project.category?.toString()) {
-        const category = await ProjectCategoryDB.findById(projectData.category);
-        if (!category) {
-          return res.status(400).json({ message: "Invalid category" });
-        }
-      }
-
-      // Update fields
-      const updatableFields = [
-        "title",
-        "slug",
-        "description",
-        "client",
-        "startDate",
-        "endDate",
-        "status",
-        "mainImage",      // Separate main image field
-        "images",         // Separate additional images field
-        "category",
-        "demoUrl",
-        "repoUrl",
-        "clientUrl",
-        "tags",
-        "technologies",
-        "isFeatured",
-        "priority",
-        "metaTitle",
-        "metaDescription",
-        "metaKeywords",
-        "isPublished",
-        "requiresLogin",
-      ];
-
-      updatableFields.forEach((field) => {
-        if (projectData[field] !== undefined) {
-          if (field === "startDate" || field === "endDate") {
-            project[field] = projectData[field] ? new Date(projectData[field]) : null;
-          } else if (field === "priority") {
-            project[field] = parseInt(projectData[field]) || 0;
-          } else if (["isFeatured", "isPublished", "requiresLogin"].includes(field)) {
-            if (typeof projectData[field] === "string") {
-              project[field] = projectData[field] === "true";
-            } else {
-              project[field] = projectData[field];
-            }
-          } else {
-            project[field] = projectData[field];
-          }
-        }
+      
+      const category = new ProjectCategoryDB({
+        name,
+        slug: slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        description,
+        isActive: isActive !== undefined ? isActive : true,
+        metaTitle,
+        metaDescription,
+        metaKeywords
       });
-
-      await project.save();
-
-      await adminActivityService.trackActivity(req.admin._id, "UPDATE", {
-        resourceType: "Project",
-        resourceId: project._id,
-        changes: {
-          before: oldValues,
-          after: {
-            title: project.title,
-            status: project.status,
-            isPublished: project.isPublished,
-            isFeatured: project.isFeatured,
-          },
-        },
-        metadata: { title: project.title },
+      
+      await category.save();
+      
+      await adminActivityService.trackActivity(req.admin._id, "CREATE", {
+        resourceType: "ProjectCategory",
+        resourceId: category._id,
+        metadata: { name: category.name, slug: category.slug },
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
       });
-
-      res.json({
-        message: "Project updated successfully",
-        data: project,
+      
+      res.status(201).json({
+        message: "Project category created successfully",
+        data: category
       });
     } catch (err) {
-      console.error("Update project error:", err);
-      res.status(500).json({ message: "Failed to update project" });
+      console.error("Create project category error:", err);
+      res.status(500).json({ message: "Failed to create project category" });
     }
   }
 );
+
+// Update project category
+router.put(
+  "/categories/:id",
+  adminAuthenticate,
+  hasPermission(["manage_projects"]),
+  async (req, res) => {
+    try {
+      const category = await ProjectCategoryDB.findById(req.params.id);
+      
+      if (!category) {
+        return res.status(404).json({ message: "Project category not found" });
+      }
+      
+      const { name, slug, description, isActive, metaTitle, metaDescription, metaKeywords } = req.body;
+      
+      // Check if name/slug conflict with other categories
+      if (name && name !== category.name) {
+        const nameExists = await ProjectCategoryDB.findOne({ 
+          name, 
+          _id: { $ne: category._id } 
+        });
+        if (nameExists) {
+          return res.status(400).json({ message: "Category name already exists" });
+        }
+        category.name = name;
+      }
+      
+      if (slug && slug !== category.slug) {
+        const slugExists = await ProjectCategoryDB.findOne({ 
+          slug, 
+          _id: { $ne: category._id } 
+        });
+        if (slugExists) {
+          return res.status(400).json({ message: "Category slug already exists" });
+        }
+        category.slug = slug;
+      }
+      
+      // Update other fields
+      if (description !== undefined) category.description = description;
+      if (isActive !== undefined) category.isActive = isActive;
+      if (metaTitle !== undefined) category.metaTitle = metaTitle;
+      if (metaDescription !== undefined) category.metaDescription = metaDescription;
+      if (metaKeywords !== undefined) category.metaKeywords = metaKeywords;
+      
+      await category.save();
+      
+      await adminActivityService.trackActivity(req.admin._id, "UPDATE", {
+        resourceType: "ProjectCategory",
+        resourceId: category._id,
+        metadata: { 
+          name: category.name, 
+          slug: category.slug,
+          changes: req.body 
+        },
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+      
+      res.json({
+        message: "Project category updated successfully",
+        data: category
+      });
+    } catch (err) {
+      console.error("Update project category error:", err);
+      res.status(500).json({ message: "Failed to update project category" });
+    }
+  }
+);
+
+
 
 // Delete project category
 router.delete(
@@ -597,42 +418,24 @@ router.get("/slug/:slug", optionalAdminAuthenticate, async (req, res) => {
   }
 });
 
+
 // Create project
 router.post(
   "/",
   adminAuthenticate,
   hasPermission(["manage_projects"]),
-  // Use fields() to handle multiple file fields
-  (req, res, next) => {
-    const upload = multer({
-      storage: multer.memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 },
-      fileFilter(req, file, cb) {
-        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
-          return cb(new Error("Only image files are allowed"));
-        }
-        cb(null, true);
-      },
-    }).fields([
+  cloudinaryProductFilesUploadFields(
+    [
       { name: "images", maxCount: 10 },
       { name: "mainImage", maxCount: 1 },
-    ]);
-
-    upload(req, res, async (err) => {
-      if (err) {
-        console.error("Multer error:", err);
-        return res.status(400).json({
-          message: err.message || "File upload error",
-        });
-      }
-      next();
-    });
-  },
+    ],
+    "shivamstack/projects",
+  ),
   async (req, res) => {
     try {
-      console.log("Project creation started");
-      console.log("Body:", req.body);
-      console.log("Files:", req.files);
+      //   console.log("Project creation started");
+      //   console.log("Body:", req.body);
+      //   console.log("Uploaded files:", req.uploadedFiles);
 
       let projectData = { ...req.body };
 
@@ -651,41 +454,43 @@ router.post(
         }
       });
 
-      // Handle images
-      let allImages = [];
+      // Handle main image - SEPARATE FIELD
+      if (req.uploadedFiles.mainImage) {
+        // New uploaded main image
+        projectData.mainImage = req.uploadedFiles.mainImage.url;
+      } else if (
+        projectData.existingMainImage &&
+        projectData.existingMainImage !== ""
+      ) {
+        // Existing main image URL
+        projectData.mainImage = projectData.existingMainImage;
+      } else {
+        // No main image
+        projectData.mainImage = "";
+      }
 
-      // 1. Handle existing images (URLs)
+      // Handle additional images - SEPARATE FIELD
+      let additionalImages = [];
+
+      // Add existing additional images if provided
       if (projectData.existingImages) {
         try {
           const existingImages = JSON.parse(projectData.existingImages);
-          allImages = [...allImages, ...existingImages];
+          if (Array.isArray(existingImages)) {
+            additionalImages = [...additionalImages, ...existingImages];
+          }
         } catch (e) {
           console.error("Error parsing existing images:", e);
         }
       }
 
-      // 2. Handle main image file if uploaded
-      if (req.files && req.files.mainImage && req.files.mainImage.length > 0) {
-        // Upload main image to Cloudinary
-        const mainImageFile = req.files.mainImage[0];
-        // You'll need to upload to Cloudinary here
-        // For now, we'll add a placeholder
-        allImages.unshift("main-image-url-will-go-here"); // This should be the Cloudinary URL
+      // Add newly uploaded additional images
+      if (req.uploadedFiles.images && req.uploadedFiles.images.length > 0) {
+        const newImageUrls = req.uploadedFiles.images.map((img) => img.url);
+        additionalImages = [...additionalImages, ...newImageUrls];
       }
 
-      // 3. Handle additional image files
-      if (req.files && req.files.images && req.files.images.length > 0) {
-        // Upload additional images to Cloudinary
-        // req.files.images.forEach(file => {
-        //   Upload to Cloudinary and add URL to allImages
-        // });
-        // For now, add placeholders
-        req.files.images.forEach((file, index) => {
-          allImages.push(`additional-image-${index}-url-will-go-here`);
-        });
-      }
-
-      projectData.images = allImages;
+      projectData.images = additionalImages;
 
       // Handle empty category
       if (!projectData.category || projectData.category === "") {
@@ -754,32 +559,13 @@ router.put(
   "/:id",
   adminAuthenticate,
   hasPermission(["manage_projects"]),
-  // Use fields() to handle multiple file fields
-  (req, res, next) => {
-    const upload = multer({
-      storage: multer.memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 },
-      fileFilter(req, file, cb) {
-        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
-          return cb(new Error("Only image files are allowed"));
-        }
-        cb(null, true);
-      },
-    }).fields([
+  cloudinaryProductFilesUploadFields(
+    [
       { name: "images", maxCount: 10 },
       { name: "mainImage", maxCount: 1 },
-    ]);
-
-    upload(req, res, async (err) => {
-      if (err) {
-        console.error("Multer error:", err);
-        return res.status(400).json({
-          message: err.message || "File upload error",
-        });
-      }
-      next();
-    });
-  },
+    ],
+    "shivamstack/projects",
+  ),
   async (req, res) => {
     try {
       let projectData = req.body;
@@ -804,37 +590,37 @@ router.put(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Handle images
-      let allImages = [];
+      // Handle main image - SEPARATE FIELD
+      if (req.uploadedFiles.mainImage) {
+        // New uploaded main image
+        projectData.mainImage = req.uploadedFiles.mainImage.url;
+      } else if (projectData.existingMainImage !== undefined) {
+        // Existing main image URL or empty string
+        projectData.mainImage = projectData.existingMainImage;
+      }
 
-      // 1. Handle existing images (URLs)
+      // Handle additional images - SEPARATE FIELD
+      let additionalImages = [];
+
+      // Add existing additional images if provided
       if (projectData.existingImages) {
         try {
           const existingImages = JSON.parse(projectData.existingImages);
-          allImages = [...allImages, ...existingImages];
+          if (Array.isArray(existingImages)) {
+            additionalImages = [...additionalImages, ...existingImages];
+          }
         } catch (e) {
           console.error("Error parsing existing images:", e);
         }
       }
 
-      // 2. Handle main image file if uploaded
-      if (req.files && req.files.mainImage && req.files.mainImage.length > 0) {
-        // Upload main image to Cloudinary
-        const mainImageFile = req.files.mainImage[0];
-        // You'll need to upload to Cloudinary here
-        // For now, we'll add a placeholder
-        allImages.unshift("main-image-url-will-go-here"); // This should be the Cloudinary URL
+      // Add newly uploaded additional images
+      if (req.uploadedFiles.images && req.uploadedFiles.images.length > 0) {
+        const newImageUrls = req.uploadedFiles.images.map((img) => img.url);
+        additionalImages = [...additionalImages, ...newImageUrls];
       }
 
-      // 3. Handle additional image files
-      if (req.files && req.files.images && req.files.images.length > 0) {
-        // Upload additional images to Cloudinary
-        req.files.images.forEach((file, index) => {
-          allImages.push(`additional-image-${index}-url-will-go-here`);
-        });
-      }
-
-      projectData.images = allImages;
+      projectData.images = additionalImages;
 
       // Store old values for activity log
       const oldValues = {
@@ -878,7 +664,8 @@ router.put(
         "startDate",
         "endDate",
         "status",
-        "images",
+        "mainImage", // Separate main image field
+        "images", // Separate additional images field
         "category",
         "demoUrl",
         "repoUrl",
@@ -945,6 +732,356 @@ router.put(
     }
   },
 );
+
+
+// // Create project
+// router.post(
+//   "/",
+//   adminAuthenticate,
+//   hasPermission(["manage_projects"]),
+//   // Use fields() to handle multiple file fields
+//   (req, res, next) => {
+//     const upload = multer({
+//       storage: multer.memoryStorage(),
+//       limits: { fileSize: 10 * 1024 * 1024 },
+//       fileFilter(req, file, cb) {
+//         if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+//           return cb(new Error("Only image files are allowed"));
+//         }
+//         cb(null, true);
+//       },
+//     }).fields([
+//       { name: "images", maxCount: 10 },
+//       { name: "mainImage", maxCount: 1 },
+//     ]);
+
+//     upload(req, res, async (err) => {
+//       if (err) {
+//         console.error("Multer error:", err);
+//         return res.status(400).json({
+//           message: err.message || "File upload error",
+//         });
+//       }
+//       next();
+//     });
+//   },
+//   async (req, res) => {
+//     try {
+//       console.log("Project creation started");
+//       console.log("Body:", req.body);
+//       console.log("Files:", req.files);
+
+//       let projectData = { ...req.body };
+
+//       // Parse JSON strings if needed
+//       const parseFields = ["tags", "technologies", "metaKeywords"];
+//       parseFields.forEach((field) => {
+//         if (projectData[field] && typeof projectData[field] === "string") {
+//           try {
+//             projectData[field] = JSON.parse(projectData[field]);
+//           } catch (e) {
+//             projectData[field] = projectData[field]
+//               .split(",")
+//               .map((t) => t.trim())
+//               .filter(Boolean);
+//           }
+//         }
+//       });
+
+//       // Handle images
+//       let allImages = [];
+
+//       // 1. Handle existing images (URLs)
+//       if (projectData.existingImages) {
+//         try {
+//           const existingImages = JSON.parse(projectData.existingImages);
+//           allImages = [...allImages, ...existingImages];
+//         } catch (e) {
+//           console.error("Error parsing existing images:", e);
+//         }
+//       }
+
+//       // 2. Handle main image file if uploaded
+//       if (req.files && req.files.mainImage && req.files.mainImage.length > 0) {
+//         // Upload main image to Cloudinary
+//         const mainImageFile = req.files.mainImage[0];
+//         // You'll need to upload to Cloudinary here
+//         // For now, we'll add a placeholder
+//         allImages.unshift("main-image-url-will-go-here"); // This should be the Cloudinary URL
+//       }
+
+//       // 3. Handle additional image files
+//       if (req.files && req.files.images && req.files.images.length > 0) {
+//         // Upload additional images to Cloudinary
+//         // req.files.images.forEach(file => {
+//         //   Upload to Cloudinary and add URL to allImages
+//         // });
+//         // For now, add placeholders
+//         req.files.images.forEach((file, index) => {
+//           allImages.push(`additional-image-${index}-url-will-go-here`);
+//         });
+//       }
+
+//       projectData.images = allImages;
+
+//       // Handle empty category
+//       if (!projectData.category || projectData.category === "") {
+//         delete projectData.category;
+//       }
+
+//       // Check if slug exists
+//       const existing = await ProjectDB.findOne({ slug: projectData.slug });
+//       if (existing) {
+//         return res.status(400).json({ message: "Project slug already exists" });
+//       }
+
+//       // Validate category only if provided
+//       if (projectData.category) {
+//         const category = await ProjectCategoryDB.findById(projectData.category);
+//         if (!category) {
+//           return res.status(400).json({ message: "Invalid category" });
+//         }
+//       }
+
+//       // Convert string booleans to actual booleans
+//       const booleanFields = ["isFeatured", "isPublished", "requiresLogin"];
+//       booleanFields.forEach((field) => {
+//         if (projectData[field] !== undefined) {
+//           projectData[field] = projectData[field] === "true";
+//         }
+//       });
+
+//       // Parse numeric fields
+//       if (projectData.priority !== undefined) {
+//         projectData.priority = parseInt(projectData.priority) || 0;
+//       }
+
+//       // Handle dates
+//       if (projectData.startDate) {
+//         projectData.startDate = new Date(projectData.startDate);
+//       }
+//       if (projectData.endDate) {
+//         projectData.endDate = new Date(projectData.endDate);
+//       }
+
+//       const project = new ProjectDB(projectData);
+//       await project.save();
+
+//       await adminActivityService.trackActivity(req.admin._id, "CREATE", {
+//         resourceType: "Project",
+//         resourceId: project._id,
+//         metadata: { title: project.title, slug: project.slug },
+//         ipAddress: req.ip,
+//         userAgent: req.get("User-Agent"),
+//       });
+
+//       res.status(201).json({
+//         message: "Project created successfully",
+//         data: project,
+//       });
+//     } catch (err) {
+//       console.error("Create project error:", err);
+//       res.status(500).json({ message: "Failed to create project" });
+//     }
+//   },
+// );
+
+// // Update project
+// router.put(
+//   "/:id",
+//   adminAuthenticate,
+//   hasPermission(["manage_projects"]),
+//   // Use fields() to handle multiple file fields
+//   (req, res, next) => {
+//     const upload = multer({
+//       storage: multer.memoryStorage(),
+//       limits: { fileSize: 10 * 1024 * 1024 },
+//       fileFilter(req, file, cb) {
+//         if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/)) {
+//           return cb(new Error("Only image files are allowed"));
+//         }
+//         cb(null, true);
+//       },
+//     }).fields([
+//       { name: "images", maxCount: 10 },
+//       { name: "mainImage", maxCount: 1 },
+//     ]);
+
+//     upload(req, res, async (err) => {
+//       if (err) {
+//         console.error("Multer error:", err);
+//         return res.status(400).json({
+//           message: err.message || "File upload error",
+//         });
+//       }
+//       next();
+//     });
+//   },
+//   async (req, res) => {
+//     try {
+//       let projectData = req.body;
+
+//       // Parse JSON strings if they came from FormData
+//       const parseFields = ["tags", "technologies", "metaKeywords"];
+//       parseFields.forEach((field) => {
+//         if (projectData[field] && typeof projectData[field] === "string") {
+//           try {
+//             projectData[field] = JSON.parse(projectData[field]);
+//           } catch (e) {
+//             projectData[field] = projectData[field]
+//               .split(",")
+//               .map((t) => t.trim())
+//               .filter(Boolean);
+//           }
+//         }
+//       });
+
+//       const project = await ProjectDB.findById(req.params.id);
+//       if (!project) {
+//         return res.status(404).json({ message: "Project not found" });
+//       }
+
+//       // Handle images
+//       let allImages = [];
+
+//       // 1. Handle existing images (URLs)
+//       if (projectData.existingImages) {
+//         try {
+//           const existingImages = JSON.parse(projectData.existingImages);
+//           allImages = [...allImages, ...existingImages];
+//         } catch (e) {
+//           console.error("Error parsing existing images:", e);
+//         }
+//       }
+
+//       // 2. Handle main image file if uploaded
+//       if (req.files && req.files.mainImage && req.files.mainImage.length > 0) {
+//         // Upload main image to Cloudinary
+//         const mainImageFile = req.files.mainImage[0];
+//         // You'll need to upload to Cloudinary here
+//         // For now, we'll add a placeholder
+//         allImages.unshift("main-image-url-will-go-here"); // This should be the Cloudinary URL
+//       }
+
+//       // 3. Handle additional image files
+//       if (req.files && req.files.images && req.files.images.length > 0) {
+//         // Upload additional images to Cloudinary
+//         req.files.images.forEach((file, index) => {
+//           allImages.push(`additional-image-${index}-url-will-go-here`);
+//         });
+//       }
+
+//       projectData.images = allImages;
+
+//       // Store old values for activity log
+//       const oldValues = {
+//         title: project.title,
+//         status: project.status,
+//         isPublished: project.isPublished,
+//         isFeatured: project.isFeatured,
+//       };
+
+//       // Check if slug exists for other projects
+//       if (projectData.slug && projectData.slug !== project.slug) {
+//         const existing = await ProjectDB.findOne({
+//           _id: { $ne: project._id },
+//           slug: projectData.slug,
+//         });
+
+//         if (existing) {
+//           return res
+//             .status(400)
+//             .json({ message: "Project slug already exists" });
+//         }
+//       }
+
+//       // Validate category if provided
+//       if (
+//         projectData.category &&
+//         projectData.category !== project.category?.toString()
+//       ) {
+//         const category = await ProjectCategoryDB.findById(projectData.category);
+//         if (!category) {
+//           return res.status(400).json({ message: "Invalid category" });
+//         }
+//       }
+
+//       // Update fields
+//       const updatableFields = [
+//         "title",
+//         "slug",
+//         "description",
+//         "client",
+//         "startDate",
+//         "endDate",
+//         "status",
+//         "images",
+//         "category",
+//         "demoUrl",
+//         "repoUrl",
+//         "clientUrl",
+//         "tags",
+//         "technologies",
+//         "isFeatured",
+//         "priority",
+//         "metaTitle",
+//         "metaDescription",
+//         "metaKeywords",
+//         "isPublished",
+//         "requiresLogin",
+//       ];
+
+//       updatableFields.forEach((field) => {
+//         if (projectData[field] !== undefined) {
+//           if (field === "startDate" || field === "endDate") {
+//             project[field] = projectData[field]
+//               ? new Date(projectData[field])
+//               : null;
+//           } else if (field === "priority") {
+//             project[field] = parseInt(projectData[field]) || 0;
+//           } else if (
+//             ["isFeatured", "isPublished", "requiresLogin"].includes(field)
+//           ) {
+//             if (typeof projectData[field] === "string") {
+//               project[field] = projectData[field] === "true";
+//             } else {
+//               project[field] = projectData[field];
+//             }
+//           } else {
+//             project[field] = projectData[field];
+//           }
+//         }
+//       });
+
+//       await project.save();
+
+//       await adminActivityService.trackActivity(req.admin._id, "UPDATE", {
+//         resourceType: "Project",
+//         resourceId: project._id,
+//         changes: {
+//           before: oldValues,
+//           after: {
+//             title: project.title,
+//             status: project.status,
+//             isPublished: project.isPublished,
+//             isFeatured: project.isFeatured,
+//           },
+//         },
+//         metadata: { title: project.title },
+//         ipAddress: req.ip,
+//         userAgent: req.get("User-Agent"),
+//       });
+
+//       res.json({
+//         message: "Project updated successfully",
+//         data: project,
+//       });
+//     } catch (err) {
+//       console.error("Update project error:", err);
+//       res.status(500).json({ message: "Failed to update project" });
+//     }
+//   },
+// );
 
 // Upload additional project images
 router.post(
