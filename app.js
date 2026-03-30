@@ -39,7 +39,10 @@ const AnalyticsRoutes = require('./routes/analytics_routes');
 // Security middleware
 
 const corsOptions = {
-  origin: 'http://localhost:5173', // Your exact frontend URL - NO trailing slash
+  origin: [
+    'http://localhost:5173',
+    process.env.PRODUCTION_BASE_FRONTEND_URL
+  ], // Your exact frontend URL - NO trailing slash
   credentials: true, // This allows cookies to be sent/received
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -69,7 +72,7 @@ const limiter = rateLimit({
     message: 'Too many requests from this IP, please try again later.'
 });
 
-app.use('/api/', limiter);
+// app.use('/api/', limiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
