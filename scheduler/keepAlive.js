@@ -9,9 +9,9 @@ class KeepAlive {
       try {
         // Determine backend URL based on environment
         const backendURL =
-          process.env.NODE_ENV === "development"
-            ? process.env.DEVELOPMENT_BASE_BACKEND_URL
-            : process.env.PRODUCTION_BASE_BACKEND_URL;
+          process.env.NODE_ENV === "production"
+            ? process.env.PRODUCTION_BASE_BACKEND_URL
+            : process.env.DEVELOPMENT_BASE_BACKEND_URL;
 
         if (!backendURL) {
           console.warn(

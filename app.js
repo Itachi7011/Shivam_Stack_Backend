@@ -152,7 +152,7 @@ app.get('/favicon.ico', (req, res) => {
 mongoose.connect(process.env.MONGODB_URI, {
 }).then(() => {
     console.log('Connected to MongoDB');
-    // schedulerManager.initialize();
+    schedulerManager.initialize();
 }).catch(err => {
     console.error('MongoDB connection error:', err);
     process.exit(1);
