@@ -7,6 +7,9 @@ const ProductCategoryDB = require("../models/public/ProductCategory");
 const Blog = require("../models/public/Blog"); // adjust path as needed
 const Product = require("../models/public/Product"); // adjust path as needed
 const User = require("../models/users/User"); // adjust path as needed
+const CaseStudy  = require("../models/public/CaseStudies");
+10
+
 const {
   userAuthenticate,
   optionalUserAuthenticate,
@@ -1603,5 +1606,180 @@ function getFallbackHealthData() {
     },
   };
 }
+
+
+const slugify = (str) =>  str.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+ 
+// ──────────────────────────────────────────────────────────
+// GET /api/case-studies
+// Public. Supports: ?status=, ?tech=, ?featured=true, ?q=, ?page=, ?limit=
+// ──────────────────────────────────────────────────────────
+router.get("/case-studies",  async (req, res) => {
+  try {
+    const {
+      status, tech, featured, q,
+      page = 1, limit = 20, sort = "priority",
+    } = req.query;
+ 
+    const filter = { isPublished: true };
+ 
+    if (status && status !== "all")            filter.status     = status;
+    if (tech   && tech   !== "all")            filter.technologies = tech;
+    if (featured === "true")                   filter.isFeatured = true;
+    if (q) filter.$text = { $search: q };
+ 
+    const skip  = (Number(page) - 1) * Number(limit);
+    const total = await CaseStudy.countDocuments(filter);
+    const docs  = await CaseStudy.find(filter)
+      .sort(sort === "priority" ? { priority: 1, createdAt: -1 } : { createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+ 
+    res.json({
+      success: true,
+      data:    docs,
+      pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / limit) },
+    });
+  } catch (err) {
+    console.error("GET /case-studies:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+ 
+// ──────────────────────────────────────────────────────────
+// GET /api/case-studies/:slugOrId
+// Public. Increments view counter.
+// ──────────────────────────────────────────────────────────
+router.get("/case-studies/:slugOrId",  async (req, res) => {
+  try {
+    const { slugOrId } = req.params;
+    const isId = /^[a-f\d]{24}$/i.test(slugOrId);
+    const doc  = await CaseStudy.findOneAndUpdate(
+      isId ? { _id: slugOrId } : { slug: slugOrId },
+      { $inc: { views: 1 } },
+      { new: true }
+    ).lean();
+ 
+    if (!doc) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, data: doc });
+  } catch (err) {
+    console.error("GET /case-studies/:id:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+ 
+// ──────────────────────────────────────────────────────────
+// POST /api/case-studies
+// Protected. Admin / owner only.
+// ──────────────────────────────────────────────────────────
+router.post("/case-studies",  async (req, res) => {
+  try {
+    const body = req.body;
+ 
+    // Auto-generate slug if missing
+    if (!body.slug && body.title) body.slug = slugify(body.title);
+ 
+    // Ensure slug is unique — append timestamp if clash
+    const existing = await CaseStudy.findOne({ slug: body.slug });
+    if (existing) body.slug = `${body.slug}-${Date.now()}`;
+ 
+    const doc = await CaseStudy.create(body);
+    res.status(201).json({ success: true, data: doc });
+  } catch (err) {
+    console.error("POST /case-studies:", err);
+    if (err.code === 11000)
+      return res.status(409).json({ success: false, message: "Slug already exists" });
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+ 
+// ──────────────────────────────────────────────────────────
+// PUT /api/case-studies/:id
+// Protected.
+// ──────────────────────────────────────────────────────────
+router.put("/case-studies/:id",  async (req, res) => {
+  try {
+    const doc = await CaseStudy.findByIdAndUpdate(
+      req.params.id,
+      { $set: req.body },
+      { new: true, runValidators: true }
+    );
+    if (!doc) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, data: doc });
+  } catch (err) {
+    console.error("PUT /case-studies/:id:", err);
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+ 
+// ──────────────────────────────────────────────────────────
+// DELETE /api/case-studies/:id
+// Protected.
+// ──────────────────────────────────────────────────────────
+router.delete("/case-studies/:id",  async (req, res) => {
+  try {
+    const doc = await CaseStudy.findByIdAndDelete(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, message: "Case study deleted" });
+  } catch (err) {
+    console.error("DELETE /case-studies/:id:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+ 
+// ──────────────────────────────────────────────────────────
+// PATCH /api/case-studies/:id/like
+// Protected. Toggle like.
+// ──────────────────────────────────────────────────────────
+router.patch("/case-studies/:id/like",  async (req, res) => {
+  try {
+    const doc = await CaseStudy.findById(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: "Not found" });
+    const userId  = req.user._id.toString();
+    const already = doc.caseStudyLikes.map(String).includes(userId);
+    if (already) {
+      doc.caseStudyLikes.pull(req.user._id);
+    } else {
+      doc.caseStudyLikes.push(req.user._id);
+    }
+    await doc.save();
+    res.json({ success: true, likes: doc.caseStudyLikes.length, liked: !already });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+ 
+// ──────────────────────────────────────────────────────────
+// POST /api/case-studies/:id/comments
+// Protected.
+// ──────────────────────────────────────────────────────────
+router.post("/case-studies/:id/comments",  async (req, res) => {
+  try {
+    const doc = await CaseStudy.findById(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: "Not found" });
+    doc.caseStudyComments.push({ user: req.user._id, comment: req.body.comment });
+    await doc.save();
+    res.status(201).json({ success: true, comments: doc.caseStudyComments });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+ 
+// ──────────────────────────────────────────────────────────
+// DELETE /api/case-studies/:id/comments/:commentId
+// Protected. Author or admin.
+// ──────────────────────────────────────────────────────────
+router.delete("/case-studies/:id/comments/:commentId",  async (req, res) => {
+  try {
+    const doc = await CaseStudy.findById(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: "Not found" });
+    doc.caseStudyComments.id(req.params.commentId)?.remove();
+    await doc.save();
+    res.json({ success: true, message: "Comment removed" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 module.exports = router;

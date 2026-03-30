@@ -10,12 +10,15 @@ const {
 } = require("../middleware/adminAuth");
 const ProjectDB = require("../models/public/Project");
 const ProjectCategoryDB = require("../models/public/ProjectCategory");
+const CaseStudiesCategoryDB = require("../models/public/CaseStudies");
+
 const adminActivityService = require("../services/adminActivityService");
 const {
   cloudinaryProductFileUpload,
   cloudinaryProductFilesUpload,
   cloudinaryProductFilesUploadFields,
 } = require("../middleware/cloudinaryUploader");
+
 
 // ==================== PROJECT CATEGORY ROUTES ====================
 
