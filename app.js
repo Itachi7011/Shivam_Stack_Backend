@@ -28,7 +28,7 @@ const PublicProductRoutes = require('./routes/public_routes');
 const MessagesRoutes = require('./routes/message_routes');
 const AnalyticsRoutes = require('./routes/analytics_routes');
 
-
+const schedulerManager = require("./config/scheduler");
 
 // Trust only Render's proxy (more secure)
 // app.set('trust proxy', 1); // Trust first proxy only
@@ -152,6 +152,7 @@ app.get('/favicon.ico', (req, res) => {
 mongoose.connect(process.env.MONGODB_URI, {
 }).then(() => {
     console.log('Connected to MongoDB');
+    schedulerManager.initialize();
 }).catch(err => {
     console.error('MongoDB connection error:', err);
     process.exit(1);
