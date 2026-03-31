@@ -40,7 +40,8 @@ const schedulerManager = require("./config/scheduler");
 
 const corsOptions = {
   origin: [
-    'http://localhost:5173',
+    'http://localhost:5173',,
+    'https://shivam-webstack.netlify.app',
     process.env.PRODUCTION_BASE_FRONTEND_URL
   ], // Your exact frontend URL - NO trailing slash
   credentials: true, // This allows cookies to be sent/received
