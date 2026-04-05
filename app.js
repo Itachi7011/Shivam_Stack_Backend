@@ -29,6 +29,7 @@ const MessagesRoutes = require('./routes/message_routes');
 const AnalyticsRoutes = require('./routes/analytics_routes');
 
 const schedulerManager = require("./config/scheduler");
+const { scheduleReminders } = require('./services/reminderService');
 
 // Trust only Render's proxy (more secure)
 // app.set('trust proxy', 1); // Trust first proxy only
@@ -159,6 +160,7 @@ mongoose.connect(process.env.MONGODB_URI, {
     process.exit(1);
 });
 
+scheduleReminders();
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
