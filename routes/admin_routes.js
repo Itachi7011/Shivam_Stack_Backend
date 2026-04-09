@@ -17,6 +17,8 @@ const ProductCategoryDB = require("../models/public/ProductCategory");
 const ProjectDB = require("../models/public/Project");
 const ProjectCategoryDB = require("../models/public/ProjectCategory");
 const UserDB = require("../models/users/User");
+const ContactMessageDB = require("../models/public/Contact");
+const BookCallDB = require("../models/public/BookCall");
 const UserActivityDB = require("../models/users/UserActivity");
 const DownloadDB = require("../models/users/Download");
 const CouponDB = require("../models/shared/Coupon");
@@ -1846,6 +1848,854 @@ router.patch(
       res.status(500).json({ message: "Failed to update user status" });
     }
   },
+);
+
+// ============================================================
+// CONTACT MESSAGES ADMIN ROUTES
+// Add these routes to your existing adminRoutes.js file
+// Base path: /api/admin/contact-messages
+// ============================================================
+
+
+// ── GET all messages (with search, filter, sort, pagination) ──────────────────
+router.get(
+  "/contact-messages",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        status,
+        category,
+        sortField = "createdAt",
+        sortOrder = "desc",
+        urgent,
+        followUp,
+      } = req.query;
+
+      const query = {};
+
+      // Search
+      if (search.trim()) {
+        query.$or = [
+          { "sender.name":  { $regex: search.trim(), $options: "i" } },
+          { "sender.email": { $regex: search.trim(), $options: "i" } },
+          { subject:        { $regex: search.trim(), $options: "i" } },
+          { message:        { $regex: search.trim(), $options: "i" } },
+          { messageId:      { $regex: search.trim(), $options: "i" } },
+        ];
+      }
+
+      // Filters
+      if (status && status !== "all") query.status = status;
+      if (category && category !== "all") query.category = category;
+      if (urgent === "true") query.isUrgent = true;
+      if (followUp === "true") query.requiresFollowUp = true;
+
+      // Sort — whitelist allowed fields
+      const allowedSortFields = ["createdAt", "sender.name", "subject", "status", "category"];
+      const safeSortField = allowedSortFields.includes(sortField) ? sortField : "createdAt";
+      const safeSortOrder = sortOrder === "asc" ? 1 : -1;
+
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      const [messages, total, statusCounts] = await Promise.all([
+        ContactMessageDB.find(query)
+          .sort({ [safeSortField]: safeSortOrder })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .select("-userAgent") // optional: hide raw userAgent from list
+          .lean(),
+
+        ContactMessageDB.countDocuments(query),
+
+        // Stats counts (always count across full collection, ignore filters)
+        ContactMessageDB.aggregate([
+          { $group: { _id: "$status", count: { $sum: 1 } } },
+        ]),
+      ]);
+
+      // Build stats object
+      const stats = { unread: 0, read: 0, replied: 0, archived: 0, spam: 0 };
+      statusCounts.forEach(({ _id, count }) => {
+        if (stats.hasOwnProperty(_id)) stats[_id] = count;
+      });
+
+      res.json({
+        data: messages,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
+        stats,
+      });
+    } catch (err) {
+      console.error("Get contact messages error:", err);
+      res.status(500).json({ message: "Failed to fetch contact messages" });
+    }
+  }
+);
+
+// ── PATCH mark single message as read ────────────────────────────────────────
+router.patch("/contact-messages/:id/mark-read",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const msg = await ContactMessageDB.findById(req.params.id);
+      if (!msg) return res.status(404).json({ message: "Message not found" });
+
+      if (msg.status === "unread") {
+        await msg.markAsRead();
+      }
+
+      res.json({ data: msg });
+    } catch (err) {
+      console.error("Mark read error:", err);
+      res.status(500).json({ message: "Failed to mark as read" });
+    }
+  }
+);
+
+// ── PATCH update single message status ───────────────────────────────────────
+router.patch(
+  "/contact-messages/:id/status",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { status } = req.body;
+      const allowed = ["unread", "read", "replied", "archived", "spam"];
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ message: "Invalid status value" });
+      }
+
+      const msg = await ContactMessageDB.findByIdAndUpdate(
+        req.params.id,
+        { status, ...(status === "read" && !msg?.readAt ? { readAt: new Date() } : {}) },
+        { new: true }
+      );
+      if (!msg) return res.status(404).json({ message: "Message not found" });
+
+      res.json({ data: msg });
+    } catch (err) {
+      console.error("Update status error:", err);
+      res.status(500).json({ message: "Failed to update status" });
+    }
+  }
+);
+
+// ── PATCH toggle flag (isUrgent / requiresFollowUp) ──────────────────────────
+router.patch(
+  "/contact-messages/:id/toggle-flag",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { field } = req.body;
+      if (!["isUrgent", "requiresFollowUp"].includes(field)) {
+        return res.status(400).json({ message: "Invalid flag field" });
+      }
+
+      const msg = await ContactMessageDB.findById(req.params.id);
+      if (!msg) return res.status(404).json({ message: "Message not found" });
+
+      msg[field] = !msg[field];
+      await msg.save();
+
+      res.json({ data: msg });
+    } catch (err) {
+      console.error("Toggle flag error:", err);
+      res.status(500).json({ message: "Failed to toggle flag" });
+    }
+  }
+);
+
+// ── POST reply to a message ───────────────────────────────────────────────────
+router.post(
+  "/contact-messages/:id/reply",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { response } = req.body;
+      if (!response || !response.trim()) {
+        return res.status(400).json({ message: "Reply text is required" });
+      }
+
+      const msg = await ContactMessageDB.findById(req.params.id);
+      if (!msg) return res.status(404).json({ message: "Message not found" });
+
+      // Mark as replied using schema method
+      await msg.markAsReplied(response.trim(), req.admin._id);
+
+      // Optional: Send email to user via your existing emailService
+      // await sendEmail({
+      //   to: msg.sender.email,
+      //   subject: `Re: ${msg.subject}`,
+      //   text: response.trim(),
+      // });
+
+      res.json({ data: msg });
+    } catch (err) {
+      console.error("Reply error:", err);
+      res.status(500).json({ message: "Failed to send reply" });
+    }
+  }
+);
+
+// ── PATCH bulk status update ─────────────────────────────────────────────────
+router.patch(
+  "/contact-messages/bulk-status",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { ids, status } = req.body;
+      const allowed = ["unread", "read", "replied", "archived", "spam"];
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "No IDs provided" });
+      }
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+
+      const updateData = { status };
+      if (status === "read") updateData.readAt = new Date();
+
+      const result = await ContactMessageDB.updateMany(
+        { _id: { $in: ids } },
+        { $set: updateData }
+      );
+
+      res.json({ message: `Updated ${result.modifiedCount} messages`, modifiedCount: result.modifiedCount });
+    } catch (err) {
+      console.error("Bulk status error:", err);
+      res.status(500).json({ message: "Bulk update failed" });
+    }
+  }
+);
+
+// ── DELETE bulk delete ────────────────────────────────────────────────────────
+router.delete(
+  "/contact-messages/bulk",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "No IDs provided" });
+      }
+
+      const result = await ContactMessageDB.deleteMany({ _id: { $in: ids } });
+      res.json({ message: `Deleted ${result.deletedCount} messages`, deletedCount: result.deletedCount });
+    } catch (err) {
+      console.error("Bulk delete error:", err);
+      res.status(500).json({ message: "Bulk delete failed" });
+    }
+  }
+);
+
+// ── DELETE single message ─────────────────────────────────────────────────────
+router.delete(
+  "/contact-messages/:id",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const msg = await ContactMessageDB.findByIdAndDelete(req.params.id);
+      if (!msg) return res.status(404).json({ message: "Message not found" });
+      res.json({ message: "Message deleted successfully" });
+    } catch (err) {
+      console.error("Delete message error:", err);
+      res.status(500).json({ message: "Failed to delete message" });
+    }
+  }
+);
+
+// ── GET single message by ID ──────────────────────────────────────────────────
+router.get(
+  "/contact-messages/:id",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const msg = await ContactMessageDB.findById(req.params.id).lean();
+      if (!msg) return res.status(404).json({ message: "Message not found" });
+      res.json({ data: msg });
+    } catch (err) {
+      console.error("Get message error:", err);
+      res.status(500).json({ message: "Failed to fetch message" });
+    }
+  }
+);
+
+// ============================================================
+// NEWSLETTER SUBSCRIBERS ADMIN ROUTES
+// Base path: /api/admin/newsletter/subscribers
+// ============================================================
+
+// ── GET all subscribers (with search, filter, sort, pagination) ─────────────
+router.get(
+  "/newsletter/subscribers",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        status,
+        sortField = "createdAt",
+        sortOrder = "desc",
+      } = req.query;
+
+      const query = {};
+
+      // Search
+      if (search.trim()) {
+        query.$or = [
+          { email: { $regex: search.trim(), $options: "i" } },
+          { name: { $regex: search.trim(), $options: "i" } },
+        ];
+      }
+
+      // Status filter
+      if (status && status !== "all") {
+        query.isActive = status === "active";
+      }
+
+      // Sort — whitelist allowed fields
+      const allowedSortFields = ["createdAt", "email", "name", "isActive"];
+      const safeSortField = allowedSortFields.includes(sortField) ? sortField : "createdAt";
+      const safeSortOrder = sortOrder === "asc" ? 1 : -1;
+
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      const [subscribers, total, activeCount, inactiveCount] = await Promise.all([
+        NewsletterSubscriberDB.find(query)
+          .sort({ [safeSortField]: safeSortOrder })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+
+        NewsletterSubscriberDB.countDocuments(query),
+
+        NewsletterSubscriberDB.countDocuments({ isActive: true }),
+        NewsletterSubscriberDB.countDocuments({ isActive: false }),
+      ]);
+
+      res.json({
+        data: subscribers,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
+        stats: {
+          total,
+          active: activeCount,
+          inactive: inactiveCount,
+        },
+      });
+    } catch (err) {
+      console.error("Get subscribers error:", err);
+      res.status(500).json({ message: "Failed to fetch subscribers" });
+    }
+  }
+);
+
+// ── PATCH toggle subscriber status ──────────────────────────────────────────
+router.patch(
+  "/newsletter/subscribers/:id/toggle-status",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const subscriber = await NewsletterSubscriberDB.findById(req.params.id);
+      if (!subscriber) {
+        return res.status(404).json({ message: "Subscriber not found" });
+      }
+
+      subscriber.isActive = !subscriber.isActive;
+      await subscriber.save();
+
+      res.json({ data: subscriber });
+    } catch (err) {
+      console.error("Toggle status error:", err);
+      res.status(500).json({ message: "Failed to toggle status" });
+    }
+  }
+);
+
+// ── PATCH bulk status update ────────────────────────────────────────────────
+router.patch(
+  "/newsletter/subscribers/bulk-status",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { ids, isActive } = req.body;
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "No IDs provided" });
+      }
+
+      const result = await NewsletterSubscriberDB.updateMany(
+        { _id: { $in: ids } },
+        { $set: { isActive } }
+      );
+
+      res.json({
+        message: `Updated ${result.modifiedCount} subscribers`,
+        modifiedCount: result.modifiedCount,
+      });
+    } catch (err) {
+      console.error("Bulk status error:", err);
+      res.status(500).json({ message: "Bulk update failed" });
+    }
+  }
+);
+
+// ── DELETE bulk delete subscribers ──────────────────────────────────────────
+router.delete(
+  "/newsletter/subscribers/bulk",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "No IDs provided" });
+      }
+
+      const result = await NewsletterSubscriberDB.deleteMany({ _id: { $in: ids } });
+      res.json({
+        message: `Deleted ${result.deletedCount} subscribers`,
+        deletedCount: result.deletedCount,
+      });
+    } catch (err) {
+      console.error("Bulk delete error:", err);
+      res.status(500).json({ message: "Bulk delete failed" });
+    }
+  }
+);
+
+// ── DELETE single subscriber ────────────────────────────────────────────────
+router.delete(
+  "/newsletter/subscribers/:id",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const subscriber = await NewsletterSubscriberDB.findByIdAndDelete(req.params.id);
+      if (!subscriber) {
+        return res.status(404).json({ message: "Subscriber not found" });
+      }
+      res.json({ message: "Subscriber deleted successfully" });
+    } catch (err) {
+      console.error("Delete subscriber error:", err);
+      res.status(500).json({ message: "Failed to delete subscriber" });
+    }
+  }
+);
+
+// ── POST send newsletter to subscribers ─────────────────────────────────────
+router.post(
+  "/newsletter/subscribers/send-newsletter",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { subject, content, recipientIds } = req.body;
+
+      if (!subject || !content) {
+        return res.status(400).json({ message: "Subject and content are required" });
+      }
+
+      let recipients = [];
+      if (recipientIds && recipientIds.length > 0) {
+        // Send to specific subscribers
+        recipients = await NewsletterSubscriberDB.find({
+          _id: { $in: recipientIds },
+          isActive: true,
+        });
+      } else {
+        // Send to all active subscribers
+        recipients = await NewsletterSubscriberDB.find({ isActive: true });
+      }
+
+      if (recipients.length === 0) {
+        return res.status(400).json({ message: "No active subscribers found" });
+      }
+
+      // Send emails in batches to avoid overwhelming the server
+      const batchSize = 10;
+      let sentCount = 0;
+      let failedCount = 0;
+
+      for (let i = 0; i < recipients.length; i += batchSize) {
+        const batch = recipients.slice(i, i + batchSize);
+        await Promise.allSettled(
+          batch.map(async (subscriber) => {
+            try {
+              await sendEmail({
+                to: subscriber.email,
+                subject: subject,
+                html: content,
+                text: content.replace(/<[^>]*>/g, ""),
+              });
+              sentCount++;
+            } catch (err) {
+              console.error(`Failed to send to ${subscriber.email}:`, err);
+              failedCount++;
+            }
+          })
+        );
+      }
+
+      // Log admin activity
+      await adminActivityService.logActivity(
+        req.admin._id,
+        "send_newsletter",
+        `Sent newsletter to ${sentCount} subscribers (${failedCount} failed)`,
+        req.ip,
+        req.userAgent
+      );
+
+      res.json({
+        message: `Newsletter sent to ${sentCount} subscribers`,
+        sent: sentCount,
+        failed: failedCount,
+      });
+    } catch (err) {
+      console.error("Send newsletter error:", err);
+      res.status(500).json({ message: "Failed to send newsletter" });
+    }
+  }
+);
+
+// ── GET subscriber statistics ───────────────────────────────────────────────
+router.get(
+  "/newsletter/subscribers/stats",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const [total, active, inactive, lastWeek] = await Promise.all([
+        NewsletterSubscriberDB.countDocuments(),
+        NewsletterSubscriberDB.countDocuments({ isActive: true }),
+        NewsletterSubscriberDB.countDocuments({ isActive: false }),
+        NewsletterSubscriberDB.countDocuments({
+          subscribedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        }),
+      ]);
+
+      res.json({
+        total,
+        active,
+        inactive,
+        newThisWeek: lastWeek,
+      });
+    } catch (err) {
+      console.error("Get stats error:", err);
+      res.status(500).json({ message: "Failed to fetch statistics" });
+    }
+  }
+);
+
+
+// ============================================================
+// BOOK A CALL ADMIN ROUTES
+// Base path: /api/admin/book-calls
+// ============================================================
+
+// ── GET all bookings (with search, filter, sort, pagination) ─────────────
+router.get(
+  "/book-calls",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        search = "",
+        status,
+        conversionStatus,
+        platform,
+        sortField = "createdAt",
+        sortOrder = "desc",
+      } = req.query;
+
+      const query = {};
+
+      // Search
+      if (search.trim()) {
+        query.$or = [
+          { "clientDetails.name": { $regex: search.trim(), $options: "i" } },
+          { "clientDetails.email": { $regex: search.trim(), $options: "i" } },
+          { bookingId: { $regex: search.trim(), $options: "i" } },
+          { "selectedService.name": { $regex: search.trim(), $options: "i" } },
+        ];
+      }
+
+      // Filters
+      if (status && status !== "all") query.status = status;
+      if (conversionStatus && conversionStatus !== "all") query.conversionStatus = conversionStatus;
+      if (platform && platform !== "all") query.preferredPlatform = platform;
+
+      // Sort — whitelist allowed fields
+      const allowedSortFields = ["createdAt", "selectedDate.date", "clientDetails.name", "status", "conversionStatus", "leadScore"];
+      let safeSortField = allowedSortFields.includes(sortField) ? sortField : "createdAt";
+      
+      // Handle nested field sorting
+      let sortObject = {};
+      if (safeSortField === "selectedDate.date") {
+        sortObject = { "selectedDate.date": sortOrder === "asc" ? 1 : -1 };
+      } else if (safeSortField === "clientDetails.name") {
+        sortObject = { "clientDetails.name": sortOrder === "asc" ? 1 : -1 };
+      } else {
+        sortObject = { [safeSortField]: sortOrder === "asc" ? 1 : -1 };
+      }
+
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      const [bookings, total, statusCounts] = await Promise.all([
+        BookCallDB.find(query)
+          .sort(sortObject)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+
+        BookCallDB.countDocuments(query),
+
+        // Status counts
+        BookCallDB.aggregate([
+          { $group: { _id: "$status", count: { $sum: 1 } } },
+        ]),
+      ]);
+
+      // Build stats object
+      const stats = { pending: 0, confirmed: 0, completed: 0, cancelled: 0, rescheduled: 0 };
+      statusCounts.forEach(({ _id, count }) => {
+        if (stats.hasOwnProperty(_id)) stats[_id] = count;
+      });
+      stats.total = total;
+
+      res.json({
+        data: bookings,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
+        stats,
+      });
+    } catch (err) {
+      console.error("Get bookings error:", err);
+      res.status(500).json({ message: "Failed to fetch bookings" });
+    }
+  }
+);
+
+// ── GET single booking by ID ────────────────────────────────────────────────
+router.get(
+  "/book-calls/:id",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const booking = await BookCallDB.findById(req.params.id).lean();
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      res.json({ data: booking });
+    } catch (err) {
+      console.error("Get booking error:", err);
+      res.status(500).json({ message: "Failed to fetch booking" });
+    }
+  }
+);
+
+// ── PUT update booking status and details ───────────────────────────────────
+router.put(
+  "/book-calls/:id",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { status, conversionStatus, meetingLink, callNotes, leadScore } = req.body;
+      
+      const updateData = {};
+      if (status) updateData.status = status;
+      if (conversionStatus) updateData.conversionStatus = conversionStatus;
+      if (meetingLink !== undefined) updateData.meetingLink = meetingLink;
+      if (callNotes !== undefined) updateData.callNotes = callNotes;
+      if (leadScore !== undefined) updateData.leadScore = leadScore;
+      
+      // Add timestamps based on status changes
+      if (status === "confirmed" && !updateData.confirmedAt) updateData.confirmedAt = new Date();
+      if (status === "completed" && !updateData.completedAt) updateData.completedAt = new Date();
+      if (status === "cancelled" && !updateData.cancelledAt) updateData.cancelledAt = new Date();
+      
+      const booking = await BookCallDB.findByIdAndUpdate(
+        req.params.id,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      );
+      
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      
+      // Log admin activity
+      await adminActivityService.logActivity(
+        req.admin._id,
+        "update_booking",
+        `Updated booking ${booking.bookingId}`,
+        req.ip,
+        req.userAgent
+      );
+      
+      res.json({ data: booking });
+    } catch (err) {
+      console.error("Update booking error:", err);
+      res.status(500).json({ message: "Failed to update booking" });
+    }
+  }
+);
+
+// ── PATCH bulk status update ────────────────────────────────────────────────
+router.patch(
+  "/book-calls/bulk-status",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { ids, status } = req.body;
+      const allowed = ["pending", "confirmed", "completed", "cancelled", "rescheduled"];
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "No IDs provided" });
+      }
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      
+      const updateData = { status };
+      if (status === "confirmed") updateData.confirmedAt = new Date();
+      if (status === "completed") updateData.completedAt = new Date();
+      if (status === "cancelled") updateData.cancelledAt = new Date();
+      
+      const result = await BookCallDB.updateMany(
+        { _id: { $in: ids } },
+        { $set: updateData }
+      );
+      
+      res.json({ 
+        message: `Updated ${result.modifiedCount} bookings`, 
+        modifiedCount: result.modifiedCount 
+      });
+    } catch (err) {
+      console.error("Bulk status error:", err);
+      res.status(500).json({ message: "Bulk update failed" });
+    }
+  }
+);
+
+// ── DELETE bulk delete bookings ─────────────────────────────────────────────
+router.delete(
+  "/book-calls/bulk",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: "No IDs provided" });
+      }
+      
+      const result = await BookCallDB.deleteMany({ _id: { $in: ids } });
+      res.json({ 
+        message: `Deleted ${result.deletedCount} bookings`, 
+        deletedCount: result.deletedCount 
+      });
+    } catch (err) {
+      console.error("Bulk delete error:", err);
+      res.status(500).json({ message: "Bulk delete failed" });
+    }
+  }
+);
+
+// ── DELETE single booking ───────────────────────────────────────────────────
+router.delete(
+  "/book-calls/:id",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const booking = await BookCallDB.findByIdAndDelete(req.params.id);
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      res.json({ message: "Booking deleted successfully" });
+    } catch (err) {
+      console.error("Delete booking error:", err);
+      res.status(500).json({ message: "Failed to delete booking" });
+    }
+  }
+);
+
+// ── GET booking statistics ──────────────────────────────────────────────────
+router.get(
+  "/book-calls/stats/overview",
+  adminAuthenticate,
+  hasPermission(["view_analytics"]),
+  async (req, res) => {
+    try {
+      const [total, pending, confirmed, completed, cancelled, todayBookings, thisWeek] = await Promise.all([
+        BookCallDB.countDocuments(),
+        BookCallDB.countDocuments({ status: "pending" }),
+        BookCallDB.countDocuments({ status: "confirmed" }),
+        BookCallDB.countDocuments({ status: "completed" }),
+        BookCallDB.countDocuments({ status: "cancelled" }),
+        BookCallDB.countDocuments({
+          "selectedDate.date": {
+            $gte: new Date().setHours(0, 0, 0, 0),
+            $lte: new Date().setHours(23, 59, 59, 999)
+          }
+        }),
+        BookCallDB.countDocuments({
+          createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        }),
+      ]);
+      
+      res.json({
+        total,
+        pending,
+        confirmed,
+        completed,
+        cancelled,
+        todayBookings,
+        newThisWeek: thisWeek,
+        conversionRate: total > 0 ? ((completed / total) * 100).toFixed(1) : 0,
+      });
+    } catch (err) {
+      console.error("Get stats error:", err);
+      res.status(500).json({ message: "Failed to fetch statistics" });
+    }
+  }
 );
 
 module.exports = router;
