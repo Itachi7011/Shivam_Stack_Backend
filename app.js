@@ -1,21 +1,21 @@
 // app.js
 const express = require('express');
 const app = express();
-const server = require("http").createServer(app);
+const server = require("http").createServer(app); 
 require('dotenv').config({ quiet: true });
 const mongoose = require('mongoose');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
-const hpp = require('hpp');
+const hpp = require('hpp'); 
 const compression = require('compression');
 const cookieParser = require(`cookie-parser`)
 const fs = require('fs');
-const path = require('path'); 
-
+const path = require('path');  
+ 
 const PORT = process.env.PORT || 5000; 
 
-const { initializeSocket } = require('./services/socketService'); 
+const { initializeSocket } = require('./services/socketService');  
 // const { Server } = require("socket.io");
 
 const UserRoutes = require('./routes/user_routes');
