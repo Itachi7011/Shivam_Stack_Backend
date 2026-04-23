@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
-const speakeasy = require("speakeasy");
+const speakeasy = require("speakeasy"); 
 
 const Admin = require("../models/admin/Admin");
 const AdminActivity = require("../models/admin/AdminActivity");
@@ -497,8 +497,8 @@ router.post("/2fa/verify", adminAuthenticate, async (req, res) => {
     admin.twoFactorEnabled = true;
     await admin.save();
 
-    res.json({ message: "2FA enabled successfully" });
-  } catch (err) {
+    res.json({ message: "2FA enabled successfully" }); 
+  } catch (err) { 
     console.error("Verify 2FA error:", err);
     res.status(500).json({ message: "Failed to verify 2FA" });
   }
@@ -1083,10 +1083,10 @@ router.get(
       const { page = 1, limit = 50, search = "", status } = req.query;
       const query = {};
 
-      if (search) {
-        query.$or = [
+      if (search) { 
+        query.$or = [ 
           { email: { $regex: search, $options: "i" } },
-          { name: { $regex: search, $options: "i" } },
+          { name: { $regex: search, $options: "i" } }, 
         ];
       }
 
