@@ -28,7 +28,7 @@ const PublicProductRoutes = require("./routes/public_routes");
 const MessagesRoutes = require("./routes/message_routes");
 const AnalyticsRoutes = require("./routes/analytics_routes");
 
-const schedulerManager = require("./config/scheduler");
+// const schedulerManager = require("./config/scheduler");
 const { scheduleReminders } = require("./services/reminderService");
 
 // Trust only Render's proxy (more secure)
@@ -145,7 +145,7 @@ mongoose
   .connect(process.env.MONGODB_URI, {})
   .then(() => {
     console.log("Connected to MongoDB");
-    schedulerManager.initialize();
+    // schedulerManager.initialize();
   })
   .catch((err) => {
     console.error("MongoDB connection error:", err);
