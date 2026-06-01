@@ -36,14 +36,14 @@ const { scheduleReminders } = require("./services/reminderService");
 
 // Or if using multiple proxies (like Render's load balancer) 
 // app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']); 
-
+ 
 // Security middleware 
-
-const corsOptions = {
+ 
+const corsOptions = { 
   origin: [
-    "http://localhost:5173",
+    "http://localhost:5173", 
     ,
-    "https://shivam-webstack.netlify.app",
+    "https://shivam-webstack.netlify.app", 
     process.env.PRODUCTION_BASE_FRONTEND_URL,
   ], // Your exact frontend URL - NO trailing slash
   credentials: true, // This allows cookies to be sent/received
