@@ -90,11 +90,11 @@ app.use(compression());
 // Routes
 // app.use('/api/public', PublicRoutes);
 app.use("/api/users", UserRoutes);
-app.use("/api/admin", AdminRoutes);
+app.use("/api/admin", AdminRoutes); 
 app.use("/api/admin/products", ProductRoutes);
-app.use("/api/admin/blogs", BlogsRoutes);
-app.use("/api/admin/coupons", CouponsRoutes);
-app.use("/api/admin/projects", ProjectsRoutes);
+app.use("/api/admin/blogs", BlogsRoutes); 
+app.use("/api/admin/coupons", CouponsRoutes); 
+app.use("/api/admin/projects", ProjectsRoutes); 
 app.use("/api/public", PublicProductRoutes);
 app.use("/api/users/messages", MessagesRoutes);
 app.use("/api/admin/analytics", AnalyticsRoutes);
