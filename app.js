@@ -96,29 +96,29 @@ app.use("/api/admin/blogs", BlogsRoutes);
 app.use("/api/admin/coupons", CouponsRoutes); 
 app.use("/api/admin/projects", ProjectsRoutes); 
 app.use("/api/public", PublicProductRoutes);
-app.use("/api/users/messages", MessagesRoutes);
-app.use("/api/admin/analytics", AnalyticsRoutes);
+app.use("/api/users/messages", MessagesRoutes); 
+app.use("/api/admin/analytics", AnalyticsRoutes); 
 // Add this test route to your app.js
-app.get("/api/test-cors-block", (req, res) => {
-  console.log("✅ CORS TEST: Request reached the server");
-  res.json({
-    message: "If you see this, CORS did NOT block the request",
-    origin: req.headers.origin,
-  });
-});
+app.get("/api/test-cors-block", (req, res) => { 
+  console.log("✅ CORS TEST: Request reached the server"); 
+  res.json({ 
+    message: "If you see this, CORS did NOT block the request", 
+    origin: req.headers.origin, 
+  }); 
+}); 
 
-app.get("/api/test", (req, res) => {
-  res.send("Successfully reaches");
-});
+app.get("/api/test", (req, res) => { 
+  res.send("Successfully reaches"); 
+}); 
 
 // Health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "success",
-    message: "Server is running",
-    timestamp: new Date().toISOString(),
-  });
-});
+app.get("/health", (req, res) => { 
+  res.status(200).json({ 
+    status: "success", 
+    message: "Server is running", 
+    timestamp: new Date().toISOString(), 
+  }); 
+}); 
 
 // 404 handler
 // app.all('/:id', (req, res) => {
