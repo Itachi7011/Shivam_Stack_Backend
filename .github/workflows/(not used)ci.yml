@@ -1,0 +1,54 @@
+name: CI
+
+# This workflow intentionally only does what the current project supports.
+# package.json has no "lint", "build", or working "test" script yet (see
+# README.md → Known limitations), so this pipeline currently verifies that
+# dependencies install cleanly and that every JS file is at least syntactically
+# valid. Uncomment the lint/test/build jobs below once those scripts exist —
+# do not enable them before then, or CI will fail on every run for reasons
+# unrelated to the actual change being made.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  install-and-syntax-check:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax-check all JavaScript files
+        run: |
+          find . -name "*.js" -not -path "./node_modules/*" -print0 \
+            | xargs -0 -n1 node --check
+
+      # ------------------------------------------------------------------
+      # RECOMMENDED ADDITION — enable once these scripts exist in package.json:
+      #
+      # - name: Lint
+      #   run: npm run lint
+      #
+      # - name: Run tests
+      #   run: npm test
+      #
+      # - name: Build
+      #   run: npm run build
+      # ------------------------------------------------------------------
